@@ -793,25 +793,25 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
     data = await state.get_data()
     
     report = (
-        "📋 *ПОЛНАЯ АНКЕТА КЛИЕНТА*\n\n"
+        "📋 ПОЛНАЯ АНКЕТА КЛИЕНТА\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "*📌 РАЗДЕЛ 1: ЛИЧНЫЕ ДАННЫЕ*\n"
+        "📌 РАЗДЕЛ 1: ЛИЧНЫЕ ДАННЫЕ\n"
         f"👤 ФИО: {data.get('full_name', '—')}\n"
         f"📞 Телефон: {data.get('phone', '—')}\n"
         f"🎂 Дата рождения: {data.get('birth_date', '—')}\n"
         f"🔍 Откуда узнали: {data.get('source', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "*⚠️ РАЗДЕЛ 2: ПРОТИВОПОКАЗАНИЯ*\n"
+        "⚠️ РАЗДЕЛ 2: ПРОТИВОПОКАЗАНИЯ\n"
         f"Противопоказания: {data.get('contraindications', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "*💆‍♀️ РАЗДЕЛ 3: МИОФАСЦИАЛЬНАЯ ДИАГНОСТИКА*\n"
+        "💆‍♀️ РАЗДЕЛ 3: МИОФАСЦИАЛЬНАЯ ДИАГНОСТИКА\n"
         f"Напряжение челюстей: {data.get('jaw_tension', '—')}\n"
         f"Зоны напряжения: {data.get('tension_areas', '—')}\n"
         f"Утреннее состояние: {data.get('morning_face', '—')}\n"
         f"Привычки: {data.get('habits', '—')}\n"
         f"Онемение/покалывание: {data.get('face_numbness', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "*🔍 РАЗДЕЛ 4: ДИАГНОСТИКА КОЖИ*\n"
+        "🔍 РАЗДЕЛ 4: ДИАГНОСТИКА КОЖИ\n"
         f"Хронические заболевания: {data.get('chronic_diseases', '—')}\n"
         f"Принимаемые препараты: {data.get('medications', '—')}\n"
         f"Кожные реакции: {data.get('skin_reactions', '—')}\n"
@@ -828,7 +828,7 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
         f"Город: {data.get('city', '—')}\n"
         f"Дата отъезда: {data.get('departure_date', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "*📖 РАЗДЕЛ 5: АНАМНЕЗ И ОЖИДАНИЯ*\n"
+        "📖 РАЗДЕЛ 5: АНАМНЕЗ И ОЖИДАНИЯ\n"
         f"Процедуры: {data.get('procedures', '—')}\n"
         f"Домашний уход: {data.get('home_care', '—')}\n"
         f"Критерий успеха: {data.get('success_criteria', '—')}\n\n"
@@ -836,10 +836,11 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
     )
     
     if data.get('has_contraindications', False):
-        report += "\n\n⚠️ *ВНИМАНИЕ: У КЛИЕНТА ЕСТЬ ПРОТИВОПОКАЗАНИЯ!*"
+        report += "\n\n⚠️ ВНИМАНИЕ: У КЛИЕНТА ЕСТЬ ПРОТИВОПОКАЗАНИЯ!"
     
     try:
-        await bot.send_message(chat_id=OWNER_ID, text=report, parse_mode="Markdown")
+        # Отправляем БЕЗ Markdown (parse_mode=None)
+        await bot.send_message(chat_id=OWNER_ID, text=report, parse_mode=None)
         logger.info(f"Анкета отправлена владельцу {OWNER_ID}")
     except Exception as e:
         logger.error(f"Не удалось отправить владельцу: {e}")
