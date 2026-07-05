@@ -642,8 +642,7 @@ async def process_skin_sensitivity(message: types.Message, state: FSMContext):
     await state.set_state(Form.priorities)
     await message.answer(
         "📋 *РАЗДЕЛ 4: ДИАГНОСТИКА КОЖИ И ЦЕЛИ (продолжение)*\n\n"
-        "Расставьте приоритеты: выберите до 3-х главных задач\n"
-        "(1 — самая важная, 2 — важная, 3 — желаемая)\n\n"
+        "Выберите до 3-х главных задач, которые необходимо решить\n\n"
         "Нажмите на кнопку с задачей, чтобы добавить её в список.\n"
         "Когда выберете все задачи, нажмите 'Готово'.",
         parse_mode="Markdown",
@@ -717,7 +716,7 @@ async def process_priorities(message: types.Message, state: FSMContext):
         return
     
     await message.answer(
-        "Нажмите на кнопку с задачей или напишите 'Готово'",
+        "Нажмите на кнопку с задачей или нажмите 'Готово'",
         reply_markup=get_priorities_keyboard()
     )
 
