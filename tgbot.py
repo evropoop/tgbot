@@ -285,7 +285,9 @@ async def handle_multiple_choice(message: types.Message, state: FSMContext, fiel
             )
             return
         
-        await state.update_data({field_name: ", ".join(selected)})
+        # Очищаем список от пустых значений и лишних пробелов
+        clean_selected = [item.strip() for item in selected if item.strip()]
+        await state.update_data({field_name: ", ".join(clean_selected)})
         await state.set_state(next_state)
         
         if next_keyboard_func:
@@ -318,8 +320,41 @@ async def handle_multiple_choice(message: types.Message, state: FSMContext, fiel
         )
         return
     
+    # Если пользователь ввел свой текст (не из кнопок)
+    if message.text and message.text.strip():
+        # Проверяем, не пытается ли пользователь ввести несколько вариантов через запятую
+        if "," in message.text:
+            # Разделяем по запятой и добавляем каждый вариант
+            new_options = [opt.strip() for opt in message.text.split(",") if opt.strip()]
+            for opt in new_options:
+                if opt not in selected and opt not in options_list:
+                    selected.append(opt)
+            await state.update_data({field_name: selected})
+            await message.answer(
+                f"✅ Добавлено: {', '.join(new_options)}\n"
+                f"Всего выбрано: {len(selected)} вариантов.\n\n"
+                "Выберите еще вариант или нажмите 'Готово' для завершения.",
+                reply_markup=keyboard_func()
+            )
+        else:
+            # Добавляем как обычный текст
+            if message.text not in selected:
+                selected.append(message.text)
+                await state.update_data({field_name: selected})
+                await message.answer(
+                    f"✅ Добавлено: {message.text}\nВыбрано: {len(selected)} вариантов.\n\n"
+                    "Выберите еще вариант или нажмите 'Готово' для завершения.",
+                    reply_markup=keyboard_func()
+                )
+            else:
+                await message.answer(
+                    f"⚠️ Вы уже выбрали '{message.text}'. Выберите другой вариант или нажмите 'Готово'.",
+                    reply_markup=keyboard_func()
+                )
+        return
+    
     await message.answer(
-        "Пожалуйста, выберите вариант из кнопок или нажмите 'Готово'.",
+        "Пожалуйста, выберите вариант из кнопок, введите свой вариант или нажмите 'Готово'.",
         reply_markup=keyboard_func()
     )
 
@@ -673,13 +708,14 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.full_name))
 async def process_full_name(message: types.Message, state: FSMContext):
-    await state.update_data(full_name=message.text.strip())
+    # Убираем лишние пробелы и запятые в начале/конце
+    clean_text = message.text.strip()
+    await state.update_data(full_name=clean_text)
     await state.set_state(Form.phone)
     await message.answer(
         "Введите *контактный телефон* (мессенджер) для связи:",
         parse_mode="Markdown"
     )
-
 
 @dp.message(StateFilter(Form.phone))
 async def process_phone(message: types.Message, state: FSMContext):
