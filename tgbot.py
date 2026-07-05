@@ -31,29 +31,29 @@ dp = Dispatcher(storage=storage)
 # ================== FSM СОСТОЯНИЯ ==================
 class Form(StatesGroup):
     waiting_for_start = State()
-    # ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА
+    # ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА
     priorities = State()
     skin_type = State()
     phototype = State()
     barrier_state = State()
     visual_markers = State()
     sos_conditions = State()
-    # ШАГ 2: ЭКСПЕРТНОСТЬ
+    # ШАГ 2: ФУНКЦИОНАЛЬНЫЙ И МИОФАСЦИАЛЬНЫЙ ТЕСТ
     morning_face = State()
     tension_areas = State()
     jaw_tension = State()
     habits = State()
     face_numbness = State()
-    # ШАГ 3: БЕЗОПАСНОСТЬ
+    # ШАГ 3: КЛИНИЧЕСКИЙ СКРИНИНГ
     contraindications = State()
     chronic_diseases = State()
     medications = State()
     allergies = State()
-    # ШАГ 4: ТЕКУЩИЙ СТАТУС
+    # ШАГ 4: АУДИТ ТЕКУЩЕГО УХОДА
     procedures = State()
     home_care = State()
     active_experience = State()
-    # ШАГ 5: ФИНАЛИЗАЦИЯ
+    # ШАГ 5: РЕГИСТРАЦИЯ ДАННЫХ И ОФОРМЛЕНИЕ SKIN PROTOKOL
     success_criteria = State()
     full_name = State()
     phone = State()
@@ -86,7 +86,7 @@ def get_start_keyboard():
     return make_keyboard(["▶️ СТАРТ"], cols=1)
 
 
-# ================== ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА ==================
+# ================== ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА ==================
 def get_priorities_keyboard():
     buttons = [
         "Морщины и потеря тонуса",
@@ -150,7 +150,7 @@ def get_sos_conditions_keyboard():
     return make_keyboard(buttons, cols=1)
 
 
-# ================== ШАГ 2: ЭКСПЕРТНОСТЬ ==================
+# ================== ШАГ 2: ФУНКЦИОНАЛЬНЫЙ И МИОФАСЦИАЛЬНЫЙ ТЕСТ ==================
 def get_morning_face_keyboard():
     buttons = [
         "Отечное",
@@ -187,7 +187,7 @@ def get_face_numbness_keyboard():
     return make_keyboard(["Да, часто", "Иногда", "Нет"], cols=3)
 
 
-# ================== ШАГ 3: БЕЗОПАСНОСТЬ ==================
+# ================== ШАГ 3: КЛИНИЧЕСКИЙ СКРИНИНГ ==================
 def get_contraindications_keyboard():
     buttons = [
         "Беременность/Лактация",
@@ -235,7 +235,7 @@ def get_allergies_keyboard():
     return make_keyboard_with_ready(buttons, cols=1)
 
 
-# ================== ШАГ 4: ТЕКУЩИЙ СТАТУС ==================
+# ================== ШАГ 4: АУДИТ ТЕКУЩЕГО УХОДА ==================
 def get_procedures_keyboard():
     return make_keyboard(["Не проходил(а)"], cols=1)
 
@@ -248,7 +248,7 @@ def get_active_experience_keyboard():
     return make_keyboard(["Не пробовал(а)"], cols=1)
 
 
-# ================== ШАГ 5: ФИНАЛИЗАЦИЯ ==================
+# ================== ШАГ 5: РЕГИСТРАЦИЯ ДАННЫХ И ОФОРМЛЕНИЕ SKIN PROTOKOL ==================
 def get_success_criteria_keyboard():
     buttons = [
         "Визуальный: Ушла «серость», появился ровный тон, ткани стали плотнее.",
@@ -285,7 +285,6 @@ async def handle_multiple_choice(message: types.Message, state: FSMContext, fiel
             )
             return
         
-        # Очищаем список от пустых значений и лишних пробелов
         clean_selected = [item.strip() for item in selected if item.strip()]
         await state.update_data({field_name: ", ".join(clean_selected)})
         await state.set_state(next_state)
@@ -320,11 +319,8 @@ async def handle_multiple_choice(message: types.Message, state: FSMContext, fiel
         )
         return
     
-    # Если пользователь ввел свой текст (не из кнопок)
     if message.text and message.text.strip():
-        # Проверяем, не пытается ли пользователь ввести несколько вариантов через запятую
         if "," in message.text:
-            # Разделяем по запятой и добавляем каждый вариант
             new_options = [opt.strip() for opt in message.text.split(",") if opt.strip()]
             for opt in new_options:
                 if opt not in selected and opt not in options_list:
@@ -337,7 +333,6 @@ async def handle_multiple_choice(message: types.Message, state: FSMContext, fiel
                 reply_markup=keyboard_func()
             )
         else:
-            # Добавляем как обычный текст
             if message.text not in selected:
                 selected.append(message.text)
                 await state.update_data({field_name: selected})
@@ -397,7 +392,7 @@ async def process_start_button(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА ==================
+# ================== ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА ==================
 @dp.message(StateFilter(Form.priorities))
 async def process_priorities(message: types.Message, state: FSMContext):
     if 'priorities_list' not in await state.get_data():
@@ -525,7 +520,7 @@ async def process_sos_conditions(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 2: ЭКСПЕРТНОСТЬ ==================
+# ================== ШАГ 2: ФУНКЦИОНАЛЬНЫЙ И МИОФАСЦИАЛЬНЫЙ ТЕСТ ==================
 @dp.message(StateFilter(Form.morning_face))
 async def process_morning_face(message: types.Message, state: FSMContext):
     await state.update_data(morning_face=message.text.strip())
@@ -584,7 +579,7 @@ async def process_face_numbness(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 3: БЕЗОПАСНОСТЬ ==================
+# ================== ШАГ 3: КЛИНИЧЕСКИЙ СКРИНИНГ ==================
 @dp.message(StateFilter(Form.contraindications))
 async def process_contraindications(message: types.Message, state: FSMContext):
     await state.update_data(contraindications=message.text.strip())
@@ -639,7 +634,7 @@ async def process_allergies(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 4: ТЕКУЩИЙ СТАТУС ==================
+# ================== ШАГ 4: АУДИТ ТЕКУЩЕГО УХОДА ==================
 @dp.message(StateFilter(Form.procedures))
 async def process_procedures(message: types.Message, state: FSMContext):
     if message.text == "Не проходил(а)":
@@ -692,7 +687,7 @@ async def process_active_experience(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 5: ФИНАЛИЗАЦИЯ ==================
+# ================== ШАГ 5: РЕГИСТРАЦИЯ ДАННЫХ И ОФОРМЛЕНИЕ SKIN PROTOKOL ==================
 @dp.message(StateFilter(Form.success_criteria))
 async def process_success_criteria(message: types.Message, state: FSMContext):
     await state.update_data(success_criteria=message.text.strip())
@@ -708,14 +703,13 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.full_name))
 async def process_full_name(message: types.Message, state: FSMContext):
-    # Убираем лишние пробелы и запятые в начале/конце
-    clean_text = message.text.strip()
-    await state.update_data(full_name=clean_text)
+    await state.update_data(full_name=message.text.strip())
     await state.set_state(Form.phone)
     await message.answer(
         "Введите *контактный телефон* (мессенджер) для связи:",
         parse_mode="Markdown"
     )
+
 
 @dp.message(StateFilter(Form.phone))
 async def process_phone(message: types.Message, state: FSMContext):
@@ -782,7 +776,7 @@ async def process_source(message: types.Message, state: FSMContext):
     report = (
         "📋 ПОЛНАЯ АНКЕТА КЛИЕНТА\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА\n"
+        "ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА\n"
         f"Приоритеты: {data.get('priorities', '—')}\n"
         f"Тип кожи: {data.get('skin_type', '—')}\n"
         f"Фототип: {data.get('phototype', '—')}\n"
@@ -790,25 +784,25 @@ async def process_source(message: types.Message, state: FSMContext):
         f"Визуальные маркеры: {data.get('visual_markers', '—')}\n"
         f"SOS состояния: {data.get('sos_conditions', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "ШАГ 2: ЭКСПЕРТНОСТЬ\n"
+        "ШАГ 2: ФУНКЦИОНАЛЬНЫЙ И МИОФАСЦИАЛЬНЫЙ ТЕСТ\n"
         f"Утреннее состояние: {data.get('morning_face', '—')}\n"
         f"Зоны напряжения: {data.get('tension_areas', '—')}\n"
         f"Напряжение челюстей: {data.get('jaw_tension', '—')}\n"
         f"Привычки: {data.get('habits', '—')}\n"
         f"Онемение лица: {data.get('face_numbness', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "ШАГ 3: БЕЗОПАСНОСТЬ\n"
+        "ШАГ 3: КЛИНИЧЕСКИЙ СКРИНИНГ\n"
         f"Противопоказания: {data.get('contraindications', '—')}\n"
         f"Хронические заболевания: {data.get('chronic_diseases', '—')}\n"
         f"Препараты: {data.get('medications', '—')}\n"
         f"Аллергии: {data.get('allergies', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "ШАГ 4: ТЕКУЩИЙ СТАТУС\n"
+        "ШАГ 4: АУДИТ ТЕКУЩЕГО УХОДА\n"
         f"Процедуры: {data.get('procedures', '—')}\n"
         f"Домашний уход: {data.get('home_care', '—')}\n"
         f"Опыт с активами: {data.get('active_experience', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "ШАГ 5: ФИНАЛИЗАЦИЯ\n"
+        "ШАГ 5: РЕГИСТРАЦИЯ ДАННЫХ И ОФОРМЛЕНИЕ SKIN PROTOKOL\n"
         f"Критерий успеха: {data.get('success_criteria', '—')}\n"
         f"ФИО: {data.get('full_name', '—')}\n"
         f"Телефон: {data.get('phone', '—')}\n"
