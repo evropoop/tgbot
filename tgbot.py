@@ -15,18 +15,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ================== КОНФИГУРАЦИЯ ==================
-# Токен берётся из переменной окружения BOT_TOKEN (на хостинге)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# Для локального запуска можно раскомментировать строку ниже и вставить токен
-# BOT_TOKEN = "8548303676:AAEqidzHcX_L2boj8oyZLfo_cspdP_Bw-4U"
-
-# Проверка: если токен не найден — бот не запустится
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден! Добавьте переменную окружения BOT_TOKEN или вставьте токен в код.")
+    raise ValueError("❌ BOT_TOKEN не найден! Добавьте переменную окружения BOT_TOKEN.")
 
-OWNER_ID = 1745568601  # Твой Telegram ID
-
+OWNER_ID = 1745568601
 IMAGE_URL = "https://pbt.storage.yandexcloud.net/cp_upload/3226d6315635f4e60bebd98a6421ea7a_full.jpeg"
 
 # ================== ИНИЦИАЛИЗАЦИЯ ==================
@@ -38,37 +31,39 @@ dp = Dispatcher(storage=storage)
 # ================== FSM СОСТОЯНИЯ ==================
 class Form(StatesGroup):
     waiting_for_start = State()
-    full_name = State()
-    phone = State()
-    birth_date = State()
-    source = State()
-    contraindications = State()
-    jaw_tension = State()
-    tension_areas = State()
+    # ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА
+    priorities = State()
+    skin_type = State()
+    phototype = State()
+    barrier_state = State()
+    visual_markers = State()
+    sos_conditions = State()
+    # ШАГ 2: ЭКСПЕРТНОСТЬ
     morning_face = State()
+    tension_areas = State()
+    jaw_tension = State()
     habits = State()
     face_numbness = State()
+    # ШАГ 3: БЕЗОПАСНОСТЬ
+    contraindications = State()
     chronic_diseases = State()
     medications = State()
-    skin_reactions = State()
-    skin_conditions = State()
-    main_concerns = State()
-    pigmentation = State()
-    phototype = State()
-    skin_type = State()
-    skin_condition = State()
-    skin_texture = State()
-    skin_issues = State()
-    skin_sensitivity = State()
-    priorities = State()
-    city = State()
-    departure_date = State()
+    allergies = State()
+    # ШАГ 4: ТЕКУЩИЙ СТАТУС
     procedures = State()
     home_care = State()
+    active_experience = State()
+    # ШАГ 5: ФИНАЛИЗАЦИЯ
     success_criteria = State()
+    full_name = State()
+    phone = State()
+    city = State()
+    climate_change = State()
+    birth_date = State()
+    source = State()
 
 
-# ================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КЛАВИАТУР ==================
+# ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def make_keyboard(buttons_list, cols=1):
     keyboard = []
     for i in range(0, len(buttons_list), cols):
@@ -91,53 +86,99 @@ def get_start_keyboard():
     return make_keyboard(["▶️ СТАРТ"], cols=1)
 
 
-def get_source_keyboard():
+# ================== ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА ==================
+def get_priorities_keyboard():
     buttons = [
-        "Instagram", "ВК", "Телеграмм", "Авито",
-        "Поиск в интернете (Google, Яндекс)",
-        "Рекомендация от друга/подруги", "Эвамед", "Другое"
+        "Морщины и потеря тонуса",
+        "Тусклый цвет лица, пигментация",
+        "Отечность, пастозность",
+        "Расширенные поры, акне, блеск",
+        "Купероз и краснота",
+        "Сухость и поврежденный барьер"
     ]
-    return make_keyboard(buttons, cols=2)
+    return make_keyboard_with_ready(buttons, cols=1)
 
 
-def get_contraindications_keyboard():
+def get_skin_type_keyboard():
+    return make_keyboard(["Жирная", "Сухая", "Комбинированная", "Нормальная"], cols=2)
+
+
+def get_phototype_keyboard():
     buttons = [
-        "Беременность (в т.ч. планирование в текущем цикле)",
-        "Кормление грудью (лактация)",
-        "Прием препаратов изотретиноина (Роаккутан, Акнекутан) в последние 6 месяцев",
-        "Онкологическое заболевание в анамнезе (менее 5 лет ремиссии)",
-        "Установленный кардиостимулятор, дефибриллятор или другие электронные импланты",
-        "Нет ни одного из вышеперечисленного"
+        "I — Всегда обгораю",
+        "II — Часто обгораю",
+        "III — Иногда обгораю, затем загораю",
+        "IV — Редко обгораю",
+        "V-VI — Смуглая, не обгораю"
     ]
     return make_keyboard(buttons, cols=1)
+
+
+def get_barrier_state_keyboard():
+    buttons = [
+        "Сильная сухость и шелушение",
+        "Частое жжение от косметики",
+        "Стянутость после умывания",
+        "Густой жирный блеск",
+        "Кожа истонченная, «пергаментная»",
+        "Нормальное, комфортное состояние"
+    ]
+    return make_keyboard_with_ready(buttons, cols=1)
+
+
+def get_visual_markers_keyboard():
+    buttons = [
+        "Акне (воспаления)",
+        "Комедоны (черные точки/бугорки)",
+        "Постакне (пятна от прыщей)",
+        "Пигментация",
+        "Купероз (сосудистая сетка)",
+        "Мелкие морщины",
+        "Птоз (потеря овала)",
+        "Ничего из перечисленного"
+    ]
+    return make_keyboard_with_ready(buttons, cols=1)
+
+
+def get_sos_conditions_keyboard():
+    buttons = [
+        "Солнечный ожог (в последние 14 дней)",
+        "Обострение дерматита или розацеа",
+        "Аллергическая сыпь",
+        "Ничего из перечисленного"
+    ]
+    return make_keyboard(buttons, cols=1)
+
+
+# ================== ШАГ 2: ЭКСПЕРТНОСТЬ ==================
+def get_morning_face_keyboard():
+    buttons = [
+        "Отечное",
+        "Тяжелое, «каменное»",
+        "Помятое, несвежее",
+        "Стянутое, сухое",
+        "Нормальное, свежее"
+    ]
+    return make_keyboard(buttons, cols=1)
+
+
+def get_tension_areas_keyboard():
+    buttons = ["Лоб", "Челюсть, ВНЧС", "Скулы", "Вокруг глаз", "Шея, затылок", "Нигде"]
+    return make_keyboard_with_ready(buttons, cols=1)
 
 
 def get_jaw_tension_keyboard():
     return make_keyboard(["Левая", "Правая", "Одинаково"], cols=3)
 
 
-def get_tension_areas_keyboard():
-    buttons = ["Лоб", "Челюсть, ВНЧС", "Скулы, жевательные мышцы", "Вокруг глаз, переносица", "Шея, затылок"]
-    return make_keyboard_with_ready(buttons, cols=2)
-
-
-def get_morning_face_keyboard():
-    buttons = [
-        "Отечное, одутловатое", "Тяжелое, зажатое, «каменное»",
-        "Помятое, уставшее, несвежее", "Стянутое, сухое, шелушащееся",
-        "Нормальное, свежее", "Другое"
-    ]
-    return make_keyboard(buttons, cols=2)
-
-
 def get_habits_keyboard():
     buttons = [
-        "Сжимаю челюсти, скриплю зубами (бруксизм)",
-        "Подпираю щеку или подбородок рукой",
-        "Щурюсь, тру глаза, хмурю брови",
-        "Кладу телефонную трубку между ухом и плечом",
-        "Сплю на животе или на боку, уткнувшись лицом в подушку",
-        "Не замечаю таких привычек"
+        "Сжимаю челюсти",
+        "Подпираю лицо",
+        "Щурюсь",
+        "Телефон между ухом и плечом",
+        "Сплю лицом в подушку",
+        "Нет привычек"
     ]
     return make_keyboard_with_ready(buttons, cols=1)
 
@@ -146,138 +187,89 @@ def get_face_numbness_keyboard():
     return make_keyboard(["Да, часто", "Иногда", "Нет"], cols=3)
 
 
-def get_phototype_keyboard():
+# ================== ШАГ 3: БЕЗОПАСНОСТЬ ==================
+def get_contraindications_keyboard():
     buttons = [
-        "I — Всегда обгораю, почти не загораю",
-        "II — Часто обгораю, загар ложится с трудом",
-        "III — Иногда обгораю, затем загораю",
-        "IV — Редко обгораю, загораю хорошо",
-        "V-VI — Практически не обгораю, кожа смуглая/темная"
+        "Беременность/Лактация",
+        "Прием изотретиноина",
+        "Онкология",
+        "Кардиостимулятор",
+        "Нет ни одного из вышеперечисленного"
     ]
     return make_keyboard(buttons, cols=1)
-
-
-def get_skin_type_keyboard():
-    return make_keyboard(["Жирная", "Сухая", "Комбинированная", "Нормальная"], cols=2)
-
-
-def get_skin_condition_keyboard():
-    return make_keyboard(["Обезвоженная", "Чувствительная/Реактивная", "Резистентная (устойчивая)"], cols=1)
-
-
-def get_skin_texture_keyboard():
-    buttons = ["Гладкая, ровная", "Шероховатая, с мелкими бугорками", "Истонченная, 'пергаментная'", "Утолщенная, плотная"]
-    return make_keyboard(buttons, cols=2)
-
-
-def get_skin_issues_keyboard():
-    buttons = ["Пигментные пятна, веснушки", "Глубокие морщины в покое", "Сильная сухость и шелушение", "Ничего из перечисленного"]
-    return make_keyboard_with_ready(buttons, cols=2)
-
-
-def get_skin_sensitivity_keyboard():
-    buttons = [
-        "Нормальная, почти не реагирует", "Легкое покраснение после процедур",
-        "Частое жжение, шелушение от косметики", "Диагностированная розацеа/купероз"
-    ]
-    return make_keyboard(buttons, cols=2)
-
-
-def get_success_criteria_keyboard():
-    buttons = [
-        "Визуальный (Архитектоника): Ушла «серость», появился ровный здоровый тон, ткани лица стали визуально плотнее.",
-        "Тактильный (Физиология барьера): Кожа перестала «болеть» и реагировать на всё подряд, ушли стянутость и шелушения.",
-        "Функциональный (Свобода): Лицо больше не требует слоя тонального крема для маскировки, а сам уход занимает пару минут.",
-        "Эмоциональный (Самоощущение): Я снова с удовольствием смотрю на себя в зеркало по утрам без чувства тревоги.",
-        "Разрыв шаблона (Доверие): Хочу наконец-то увидеть реальную работу химии на своем лице после десятков бесполезных баночек."
-    ]
-    return make_keyboard(buttons, cols=1)
-
-
-def get_medications_keyboard():
-    buttons = [
-        "Антикоагулянты (Варфарин, Ксарелто, Эликвис и т.д.)",
-        "Гормональные препараты (оральные контрацептивы, ЗГТ, терапия для щитовидной железы)",
-        "Антибиотики длительным курсом",
-        "БАДы с разжижающим эффектом (рыбий жир, витамин Е >400 МЕ, гинкго билоба, чеснок)",
-        "Нет"
-    ]
-    return make_keyboard_with_ready(buttons, cols=1)
 
 
 def get_chronic_diseases_keyboard():
     buttons = [
-        "Сахарный диабет",
-        "Аутоиммунные заболевания (ревматоидный артрит, волчанка, склеродермия и т.д.)",
+        "Диабет",
+        "Аутоиммунные",
         "Эпилепсия",
-        "Гипертония (повышенное артериальное давление)",
-        "Заболевания щитовидной железы",
-        "Нет ничего из перечисленного"
+        "Гипертония",
+        "Щитовидная железа",
+        "ЖКТ",
+        "Нет"
     ]
     return make_keyboard_with_ready(buttons, cols=1)
 
 
-def get_skin_reactions_keyboard():
+def get_medications_keyboard():
     buttons = [
-        "Склонность к образованию келоидных или гипертрофических рубцов",
+        "Антикоагулянты",
+        "Гормональные (КОК, ЗГТ)",
+        "Антидепрессанты",
+        "Антибиотики",
+        "БАДы",
+        "Нет"
+    ]
+    return make_keyboard_with_ready(buttons, cols=1)
+
+
+def get_allergies_keyboard():
+    buttons = [
+        "Келоидные рубцы",
         "Витилиго",
-        "Аллергические реакции (укажите на что именно)",
+        "Пищевая аллергия",
+        "На металлы или косметику",
         "Нет"
     ]
     return make_keyboard_with_ready(buttons, cols=1)
 
 
-def get_skin_conditions_keyboard():
-    buttons = [
-        "Розацеа, стойкий купероз (сосудистые звездочки)",
-        "Акне в воспалительной стадии (гнойнички, папулы)",
-        "Дерматит (атопический, себорейный)",
-        "Солнечный ожог, полученный в последние 14 дней",
-        "Склонность к образованию пигментных пятен",
-        "Герпетические высыпания (герпес)",
-        "Нет"
-    ]
-    return make_keyboard_with_ready(buttons, cols=1)
-
-
-def get_main_concerns_keyboard():
-    buttons = ["Мелкие морщинки при мимике", "Глубокие складки, видные в покое", "Обвисшая кожа, 'поплывший' овал", "Общая дряблость, потеря объема"]
-    return make_keyboard_with_ready(buttons, cols=2)
-
-
-def get_pigmentation_keyboard():
-    buttons = [
-        "Красные/коричневые следы после прыщей",
-        "Коричневые пятна на скулах/лбу (как веснушки)",
-        "Неравномерный загар, пятна от солнца",
-        "Нет пигментации"
-    ]
-    return make_keyboard_with_ready(buttons, cols=2)
-
-
-def get_priorities_keyboard():
-    buttons = [
-        "Морщины, потеря тонуса и упругости (птоз)",
-        "Тусклый, неровный цвет лица, гиперпигментация",
-        "Отечность, пастозность, нечеткость контура овала",
-        "Расширенные поры, жирный блеск, акне/постакне",
-        "Купероз, стойкое покраснение, чувствительность",
-        "Сухость, шелушение, ощущение поврежденного барьера",
-        "Восстановление после инвазивных процедур"
-    ]
-    return make_keyboard_with_ready(buttons, cols=1)
-
-
-def get_departure_keyboard():
-    return make_keyboard(["Не отдыхаю"], cols=1)
-
-
+# ================== ШАГ 4: ТЕКУЩИЙ СТАТУС ==================
 def get_procedures_keyboard():
     return make_keyboard(["Не проходил(а)"], cols=1)
 
 
 def get_home_care_keyboard():
     return make_keyboard(["Уход отсутствует"], cols=1)
+
+
+def get_active_experience_keyboard():
+    return make_keyboard(["Не пробовал(а)"], cols=1)
+
+
+# ================== ШАГ 5: ФИНАЛИЗАЦИЯ ==================
+def get_success_criteria_keyboard():
+    buttons = [
+        "Визуальный: Ушла «серость», появился ровный тон, ткани стали плотнее.",
+        "Тактильный: Кожа перестала «болеть», ушли стянутость и шелушения.",
+        "Функциональный: Лицо больше не требует тонального крема.",
+        "Эмоциональный: С удовольствием смотрю в зеркало по утрам без тревоги.",
+        "Разрыв шаблона: Хочу увидеть реальную работу химии после десятков бесполезных баночек."
+    ]
+    return make_keyboard(buttons, cols=1)
+
+
+def get_climate_change_keyboard():
+    return make_keyboard(["Не планирую"], cols=1)
+
+
+def get_source_keyboard():
+    buttons = [
+        "Instagram", "ВК", "Телеграмм", "Авито",
+        "Поиск", "Рекомендация", "Эвамед", "Другое"
+    ]
+    return make_keyboard(buttons, cols=2)
 
 
 # ================== ОБРАБОТЧИК МНОЖЕСТВЕННОГО ВЫБОРА ==================
@@ -297,15 +289,9 @@ async def handle_multiple_choice(message: types.Message, state: FSMContext, fiel
         await state.set_state(next_state)
         
         if next_keyboard_func:
-            await message.answer(
-                next_question,
-                reply_markup=next_keyboard_func()
-            )
+            await message.answer(next_question, reply_markup=next_keyboard_func())
         else:
-            await message.answer(
-                next_question,
-                reply_markup=ReplyKeyboardRemove()
-            )
+            await message.answer(next_question, reply_markup=ReplyKeyboardRemove())
         return
     
     options_list = []
@@ -338,6 +324,7 @@ async def handle_multiple_choice(message: types.Message, state: FSMContext, fiel
     )
 
 
+# ================== ОБРАБОТЧИК /START ==================
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} запустил бота")
@@ -362,285 +349,12 @@ async def cmd_start(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ОБРАБОТЧИК КНОПКИ "СТАРТ" ==================
 @dp.message(StateFilter(Form.waiting_for_start), F.text == "▶️ СТАРТ")
 async def process_start_button(message: types.Message, state: FSMContext):
-    await state.set_state(Form.full_name)
-    await message.answer(
-        "📋 *РАЗДЕЛ 1: ЛИЧНЫЕ ДАННЫЕ*\n\n"
-        "Введи свои *Фамилию, Имя и Отчество*:",
-        parse_mode="Markdown",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-
-# ================== РАЗДЕЛ 1: ЛИЧНЫЕ ДАННЫЕ ==================
-@dp.message(StateFilter(Form.full_name))
-async def process_full_name(message: types.Message, state: FSMContext):
-    await state.update_data(full_name=message.text.strip())
-    await state.set_state(Form.phone)
-    await message.answer(
-        "Введи *контактный телефон* для связи:",
-        parse_mode="Markdown"
-    )
-
-
-@dp.message(StateFilter(Form.phone))
-async def process_phone(message: types.Message, state: FSMContext):
-    await state.update_data(phone=message.text.strip())
-    await state.set_state(Form.birth_date)
-    await message.answer(
-        "Введи свою *дату рождения* в формате *ДД.ММ.ГГГГ*:\n"
-        "(например, 25.12.1990)",
-        parse_mode="Markdown"
-    )
-
-
-@dp.message(StateFilter(Form.birth_date))
-async def process_birth_date(message: types.Message, state: FSMContext):
-    try:
-        datetime.strptime(message.text.strip(), "%d.%m.%Y")
-    except ValueError:
-        await message.answer(
-            "❌ Неверный формат! Введи дату в формате *ДД.ММ.ГГГГ*:\n"
-            "(например, 25.12.1990)",
-            parse_mode="Markdown"
-        )
-        return
-
-    await state.update_data(birth_date=message.text.strip())
-    await state.set_state(Form.source)
-    await message.answer(
-        "Как вы о нас узнали?",
-        reply_markup=get_source_keyboard()
-    )
-
-
-@dp.message(StateFilter(Form.source))
-async def process_source(message: types.Message, state: FSMContext):
-    await state.update_data(source=message.text.strip())
-    await state.set_state(Form.contraindications)
-    await message.answer(
-        "📋 *РАЗДЕЛ 2: МЕДИЦИНСКИЙ СКРИНИНГ*\n\n"
-        "⚠️ *Критически важный блок для вашей безопасности*\n\n"
-        "Есть ли у вас следующие абсолютные противопоказания?",
-        parse_mode="Markdown",
-        reply_markup=get_contraindications_keyboard()
-    )
-
-
-# ================== РАЗДЕЛ 2: ПРОТИВОПОКАЗАНИЯ ==================
-@dp.message(StateFilter(Form.contraindications))
-async def process_contraindications(message: types.Message, state: FSMContext):
-    await state.update_data(contraindications=message.text.strip())
-    
-    has_contraindications = message.text.strip() != "Нет ни одного из вышеперечисленного"
-    await state.update_data(has_contraindications=has_contraindications)
-    
-    await state.set_state(Form.jaw_tension)
-    await message.answer(
-        "📋 *РАЗДЕЛ 3: МИОФАСЦИАЛЬНАЯ ДИАГНОСТИКА*\n\n"
-        "💆‍♀️ *Тест: Сожмите челюсти, положив пальцы на виски.*\n\n"
-        "Какая сторона ощущается более напряженной?",
-        parse_mode="Markdown",
-        reply_markup=get_jaw_tension_keyboard()
-    )
-
-
-# ================== РАЗДЕЛ 3: МИОФАСЦИАЛЬНАЯ ДИАГНОСТИКА ==================
-@dp.message(StateFilter(Form.jaw_tension))
-async def process_jaw_tension(message: types.Message, state: FSMContext):
-    await state.update_data(jaw_tension=message.text.strip())
-    await state.set_state(Form.tension_areas)
-    await message.answer(
-        "Где вы чаще всего ощущаете напряжение, даже в покое? (Выберите несколько вариантов)\n\n"
-        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        reply_markup=get_tension_areas_keyboard()
-    )
-
-
-@dp.message(StateFilter(Form.tension_areas))
-async def process_tension_areas(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="tension_areas",
-        keyboard_func=get_tension_areas_keyboard,
-        next_state=Form.morning_face,
-        next_question="Опишите привычное утреннее состояние вашего лица:",
-        next_keyboard_func=get_morning_face_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.morning_face))
-async def process_morning_face(message: types.Message, state: FSMContext):
-    await state.update_data(morning_face=message.text.strip())
-    await state.set_state(Form.habits)
-    await message.answer(
-        "Отметьте привычки, которые замечаете за собой: (Выберите несколько вариантов)\n\n"
-        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        reply_markup=get_habits_keyboard()
-    )
-
-
-@dp.message(StateFilter(Form.habits))
-async def process_habits(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="habits",
-        keyboard_func=get_habits_keyboard,
-        next_state=Form.face_numbness,
-        next_question="Бывает ли у вас чувство онемения, «маски» или покалывания на лице?",
-        next_keyboard_func=get_face_numbness_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.face_numbness))
-async def process_face_numbness(message: types.Message, state: FSMContext):
-    await state.update_data(face_numbness=message.text.strip())
-    await state.set_state(Form.chronic_diseases)
-    await message.answer(
-        "📋 *РАЗДЕЛ 4: ДИАГНОСТИКА КОЖИ И ЦЕЛИ*\n\n"
-        "🔍 *Пожалуйста, опишите состояние вашей кожи*\n\n"
-        "Есть ли у вас хронические заболевания? (Выберите несколько вариантов)\n\n"
-        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        parse_mode="Markdown",
-        reply_markup=get_chronic_diseases_keyboard()
-    )
-
-
-# ================== РАЗДЕЛ 4: ДИАГНОСТИКА КОЖИ ==================
-@dp.message(StateFilter(Form.chronic_diseases))
-async def process_chronic_diseases(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="chronic_diseases",
-        keyboard_func=get_chronic_diseases_keyboard,
-        next_state=Form.medications,
-        next_question="Принимаете ли вы в настоящее время или принимали курсом в последние 3 месяца: (Выберите несколько вариантов)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        next_keyboard_func=get_medications_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.medications))
-async def process_medications(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="medications",
-        keyboard_func=get_medications_keyboard,
-        next_state=Form.skin_reactions,
-        next_question="Отмечалась ли у вас склонность к следующим реакциям? (Выберите несколько вариантов)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        next_keyboard_func=get_skin_reactions_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.skin_reactions))
-async def process_skin_reactions(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="skin_reactions",
-        keyboard_func=get_skin_reactions_keyboard,
-        next_state=Form.skin_conditions,
-        next_question="Имеются ли у вас в настоящее время или часто рецидивируют? (Выберите несколько вариантов)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        next_keyboard_func=get_skin_conditions_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.skin_conditions))
-async def process_skin_conditions(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="skin_conditions",
-        keyboard_func=get_skin_conditions_keyboard,
-        next_state=Form.main_concerns,
-        next_question="Какие изменения беспокоят больше всего? (Выберите несколько вариантов)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        next_keyboard_func=get_main_concerns_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.main_concerns))
-async def process_main_concerns(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="main_concerns",
-        keyboard_func=get_main_concerns_keyboard,
-        next_state=Form.pigmentation,
-        next_question="Если есть пятна на коже, они: (Выберите несколько вариантов)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        next_keyboard_func=get_pigmentation_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.pigmentation))
-async def process_pigmentation(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="pigmentation",
-        keyboard_func=get_pigmentation_keyboard,
-        next_state=Form.phototype,
-        next_question="Как ваша кожа реагирует на 30 минут пребывания на активном солнце без защиты?\n(Определение фототипа)",
-        next_keyboard_func=get_phototype_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.phototype))
-async def process_phototype(message: types.Message, state: FSMContext):
-    await state.update_data(phototype=message.text.strip())
-    await state.set_state(Form.skin_type)
-    await message.answer(
-        "Какой у вас тип кожи в последние 3 месяца?",
-        reply_markup=get_skin_type_keyboard()
-    )
-
-
-@dp.message(StateFilter(Form.skin_type))
-async def process_skin_type(message: types.Message, state: FSMContext):
-    await state.update_data(skin_type=message.text.strip())
-    await state.set_state(Form.skin_condition)
-    await message.answer(
-        "Как бы вы охарактеризовали состояние своей кожи в последние 3 месяца?",
-        reply_markup=get_skin_condition_keyboard()
-    )
-
-
-@dp.message(StateFilter(Form.skin_condition))
-async def process_skin_condition(message: types.Message, state: FSMContext):
-    await state.update_data(skin_condition=message.text.strip())
-    await state.set_state(Form.skin_texture)
-    await message.answer(
-        "Какова ТЕКСТУРА вашей кожи?",
-        reply_markup=get_skin_texture_keyboard()
-    )
-
-
-@dp.message(StateFilter(Form.skin_texture))
-async def process_skin_texture(message: types.Message, state: FSMContext):
-    await state.update_data(skin_texture=message.text.strip())
-    await state.set_state(Form.skin_issues)
-    await message.answer(
-        "ДОБАВЬТЕ варианты: (Выберите несколько вариантов)\n\n"
-        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
-        reply_markup=get_skin_issues_keyboard()
-    )
-
-
-@dp.message(StateFilter(Form.skin_issues))
-async def process_skin_issues(message: types.Message, state: FSMContext):
-    await handle_multiple_choice(
-        message, state,
-        field_name="skin_issues",
-        keyboard_func=get_skin_issues_keyboard,
-        next_state=Form.skin_sensitivity,
-        next_question="Оцените ЧУВСТВИТЕЛЬНОСТЬ вашей кожи:",
-        next_keyboard_func=get_skin_sensitivity_keyboard
-    )
-
-
-@dp.message(StateFilter(Form.skin_sensitivity))
-async def process_skin_sensitivity(message: types.Message, state: FSMContext):
-    await state.update_data(skin_sensitivity=message.text.strip())
     await state.set_state(Form.priorities)
     await message.answer(
-        "📋 *РАЗДЕЛ 4: ДИАГНОСТИКА КОЖИ И ЦЕЛИ (продолжение)*\n\n"
-        "Выберите до 3-х главных задач, которые необходимо решить\n\n"
+        "📋 *ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА*\n\n"
+        "Выберите до 3-х главных задач, которые необходимо решить:\n\n"
         "Нажмите на кнопку с задачей, чтобы добавить её в список.\n"
         "Когда выберете все задачи, нажмите 'Готово'.",
         parse_mode="Markdown",
@@ -648,6 +362,7 @@ async def process_skin_sensitivity(message: types.Message, state: FSMContext):
     )
 
 
+# ================== ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА ==================
 @dp.message(StateFilter(Form.priorities))
 async def process_priorities(message: types.Message, state: FSMContext):
     if 'priorities_list' not in await state.get_data():
@@ -657,13 +372,12 @@ async def process_priorities(message: types.Message, state: FSMContext):
     priorities_list = data.get('priorities_list', [])
     
     options_list = [
-        "Морщины, потеря тонуса и упругости (птоз)",
-        "Тусклый, неровный цвет лица, гиперпигментация",
-        "Отечность, пастозность, нечеткость контура овала",
-        "Расширенные поры, жирный блеск, акне/постакне",
-        "Купероз, стойкое покраснение, чувствительность",
-        "Сухость, шелушение, ощущение поврежденного барьера",
-        "Восстановление после инвазивных процедур"
+        "Морщины и потеря тонуса",
+        "Тусклый цвет лица, пигментация",
+        "Отечность, пастозность",
+        "Расширенные поры, акне, блеск",
+        "Купероз и краснота",
+        "Сухость и поврежденный барьер"
     ]
     
     if message.text and message.text.lower() == "готово":
@@ -675,10 +389,10 @@ async def process_priorities(message: types.Message, state: FSMContext):
             return
         
         await state.update_data(priorities=", ".join(priorities_list))
-        await state.set_state(Form.city)
+        await state.set_state(Form.skin_type)
         await message.answer(
-            "Из какого Вы города?",
-            reply_markup=ReplyKeyboardRemove()
+            "Какой генетический тип вашей кожи?",
+            reply_markup=get_skin_type_keyboard()
         )
         return
     
@@ -706,10 +420,10 @@ async def process_priorities(message: types.Message, state: FSMContext):
                 reply_markup=ReplyKeyboardRemove()
             )
             await state.update_data(priorities=", ".join(priorities_list))
-            await state.set_state(Form.city)
+            await state.set_state(Form.skin_type)
             await message.answer(
-                "Из какого Вы города?",
-                reply_markup=ReplyKeyboardRemove()
+                "Какой генетический тип вашей кожи?",
+                reply_markup=get_skin_type_keyboard()
             )
         return
     
@@ -719,37 +433,178 @@ async def process_priorities(message: types.Message, state: FSMContext):
     )
 
 
-@dp.message(StateFilter(Form.city))
-async def process_city(message: types.Message, state: FSMContext):
-    await state.update_data(city=message.text.strip())
-    await state.set_state(Form.departure_date)
+@dp.message(StateFilter(Form.skin_type))
+async def process_skin_type(message: types.Message, state: FSMContext):
+    await state.update_data(skin_type=message.text.strip())
+    await state.set_state(Form.phototype)
     await message.answer(
-        "Если вы отдыхающий, укажите примерную дату отъезда\n"
-        "(например, 15.08.2026)\n\n"
-        "Или нажмите кнопку:",
-        reply_markup=get_departure_keyboard()
+        "Как ваша кожа реагирует на 30 минут пребывания на солнце без защиты?",
+        reply_markup=get_phototype_keyboard()
     )
 
 
-@dp.message(StateFilter(Form.departure_date))
-async def process_departure_date(message: types.Message, state: FSMContext):
-    if message.text == "Не отдыхаю":
-        await state.update_data(departure_date="Не отдыхаю")
-    else:
-        await state.update_data(departure_date=message.text.strip())
-    
-    await state.set_state(Form.procedures)
+@dp.message(StateFilter(Form.phototype))
+async def process_phototype(message: types.Message, state: FSMContext):
+    await state.update_data(phototype=message.text.strip())
+    await state.set_state(Form.barrier_state)
     await message.answer(
-        "📋 *РАЗДЕЛ 5: АНАМНЕЗ И ОЖИДАНИЯ*\n\n"
-        "Какие профессиональные косметологические процедуры вы проходили за последние 12 месяцев?\n"
-        "(Чистки, пилинги, инъекции, лазер, RF, нити и т.д.)\n\n"
-        "Если были нитевые методики (мезонити, лигатурные нити), укажите дату\n\n"
-        "Напишите подробно или нажмите кнопку:",
+        "Что вы ТАКТИЛЬНО ощущаете на коже в последние месяцы? (Выберите несколько)\n\n"
+        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
+        reply_markup=get_barrier_state_keyboard()
+    )
+
+
+@dp.message(StateFilter(Form.barrier_state))
+async def process_barrier_state(message: types.Message, state: FSMContext):
+    await handle_multiple_choice(
+        message, state,
+        field_name="barrier_state",
+        keyboard_func=get_barrier_state_keyboard,
+        next_state=Form.visual_markers,
+        next_question="Что вы ВИДИТЕ в зеркале (какие маркеры присутствуют)? (Выберите несколько)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
+        next_keyboard_func=get_visual_markers_keyboard
+    )
+
+
+@dp.message(StateFilter(Form.visual_markers))
+async def process_visual_markers(message: types.Message, state: FSMContext):
+    await handle_multiple_choice(
+        message, state,
+        field_name="visual_markers",
+        keyboard_func=get_visual_markers_keyboard,
+        next_state=Form.sos_conditions,
+        next_question="Есть ли у вас прямо сейчас острые состояния, требующие срочной реабилитации?",
+        next_keyboard_func=get_sos_conditions_keyboard
+    )
+
+
+@dp.message(StateFilter(Form.sos_conditions))
+async def process_sos_conditions(message: types.Message, state: FSMContext):
+    await state.update_data(sos_conditions=message.text.strip())
+    await state.set_state(Form.morning_face)
+    await message.answer(
+        "📋 *ШАГ 2: ЭКСПЕРТНОСТЬ*\n\n"
+        "Опишите привычное утреннее состояние вашего лица:",
         parse_mode="Markdown",
-        reply_markup=get_procedures_keyboard()
+        reply_markup=get_morning_face_keyboard()
     )
 
 
+# ================== ШАГ 2: ЭКСПЕРТНОСТЬ ==================
+@dp.message(StateFilter(Form.morning_face))
+async def process_morning_face(message: types.Message, state: FSMContext):
+    await state.update_data(morning_face=message.text.strip())
+    await state.set_state(Form.tension_areas)
+    await message.answer(
+        "Где вы чаще всего ощущаете напряжение, даже в покое? (Выберите несколько)\n\n"
+        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
+        reply_markup=get_tension_areas_keyboard()
+    )
+
+
+@dp.message(StateFilter(Form.tension_areas))
+async def process_tension_areas(message: types.Message, state: FSMContext):
+    await handle_multiple_choice(
+        message, state,
+        field_name="tension_areas",
+        keyboard_func=get_tension_areas_keyboard,
+        next_state=Form.jaw_tension,
+        next_question="Тест: Сожмите челюсти, положив пальцы на виски. Какая сторона ощущается более напряженной?",
+        next_keyboard_func=get_jaw_tension_keyboard
+    )
+
+
+@dp.message(StateFilter(Form.jaw_tension))
+async def process_jaw_tension(message: types.Message, state: FSMContext):
+    await state.update_data(jaw_tension=message.text.strip())
+    await state.set_state(Form.habits)
+    await message.answer(
+        "Отметьте привычки, которые замечаете за собой: (Выберите несколько)\n\n"
+        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
+        reply_markup=get_habits_keyboard()
+    )
+
+
+@dp.message(StateFilter(Form.habits))
+async def process_habits(message: types.Message, state: FSMContext):
+    await handle_multiple_choice(
+        message, state,
+        field_name="habits",
+        keyboard_func=get_habits_keyboard,
+        next_state=Form.face_numbness,
+        next_question="Бывает ли у вас чувство онемения, «маски» или покалывания на лице?",
+        next_keyboard_func=get_face_numbness_keyboard
+    )
+
+
+@dp.message(StateFilter(Form.face_numbness))
+async def process_face_numbness(message: types.Message, state: FSMContext):
+    await state.update_data(face_numbness=message.text.strip())
+    await state.set_state(Form.contraindications)
+    await message.answer(
+        "📋 *ШАГ 3: БЕЗОПАСНОСТЬ*\n\n"
+        "Есть ли у вас следующие абсолютные противопоказания?",
+        parse_mode="Markdown",
+        reply_markup=get_contraindications_keyboard()
+    )
+
+
+# ================== ШАГ 3: БЕЗОПАСНОСТЬ ==================
+@dp.message(StateFilter(Form.contraindications))
+async def process_contraindications(message: types.Message, state: FSMContext):
+    await state.update_data(contraindications=message.text.strip())
+    
+    has_contraindications = message.text.strip() != "Нет ни одного из вышеперечисленного"
+    await state.update_data(has_contraindications=has_contraindications)
+    
+    await state.set_state(Form.chronic_diseases)
+    await message.answer(
+        "Есть ли у вас хронические заболевания? (Выберите несколько)\n\n"
+        "Выберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
+        reply_markup=get_chronic_diseases_keyboard()
+    )
+
+
+@dp.message(StateFilter(Form.chronic_diseases))
+async def process_chronic_diseases(message: types.Message, state: FSMContext):
+    await handle_multiple_choice(
+        message, state,
+        field_name="chronic_diseases",
+        keyboard_func=get_chronic_diseases_keyboard,
+        next_state=Form.medications,
+        next_question="Принимаете ли вы в настоящее время: (Выберите несколько)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
+        next_keyboard_func=get_medications_keyboard
+    )
+
+
+@dp.message(StateFilter(Form.medications))
+async def process_medications(message: types.Message, state: FSMContext):
+    await handle_multiple_choice(
+        message, state,
+        field_name="medications",
+        keyboard_func=get_medications_keyboard,
+        next_state=Form.allergies,
+        next_question="Отмечалась ли у вас склонность к следующим реакциям? (Выберите несколько)\n\nВыберите варианты из кнопок. Когда закончите, нажмите 'Готово'.",
+        next_keyboard_func=get_allergies_keyboard
+    )
+
+
+@dp.message(StateFilter(Form.allergies))
+async def process_allergies(message: types.Message, state: FSMContext):
+    await handle_multiple_choice(
+        message, state,
+        field_name="allergies",
+        keyboard_func=get_allergies_keyboard,
+        next_state=Form.procedures,
+        next_question="📋 *ШАГ 4: ТЕКУЩИЙ СТАТУС*\n\n"
+        "Какие косметологические процедуры вы проходили за последние 12 месяцев? "
+        "(Чистки, пилинги, инъекции, лазер, нити).\n\n"
+        "Напишите подробно или нажмите кнопку:",
+        next_keyboard_func=get_procedures_keyboard
+    )
+
+
+# ================== ШАГ 4: ТЕКУЩИЙ СТАТУС ==================
 @dp.message(StateFilter(Form.procedures))
 async def process_procedures(message: types.Message, state: FSMContext):
     if message.text == "Не проходил(а)":
@@ -761,7 +616,7 @@ async def process_procedures(message: types.Message, state: FSMContext):
     await message.answer(
         "Опишите ваш текущий домашний уход:\n\n"
         "Очищение: ...\n"
-        "Активные сыворотки: ...\n"
+        "Сыворотки: ...\n"
         "Крем: ...\n"
         "SPF: ...\n\n"
         "Напишите подробно или нажмите кнопку:",
@@ -776,60 +631,155 @@ async def process_home_care(message: types.Message, state: FSMContext):
     else:
         await state.update_data(home_care=message.text.strip())
     
+    await state.set_state(Form.active_experience)
+    await message.answer(
+        "Пробовали ли вы вводить в уход активные компоненты (кислоты, ретинол, витамин С)?\n\n"
+        "Если да, какой была реакция кожи?\n\n"
+        "Напишите подробно или нажмите кнопку:",
+        reply_markup=get_active_experience_keyboard()
+    )
+
+
+@dp.message(StateFilter(Form.active_experience))
+async def process_active_experience(message: types.Message, state: FSMContext):
+    if message.text == "Не пробовал(а)":
+        await state.update_data(active_experience="Не пробовал(а)")
+    else:
+        await state.update_data(active_experience=message.text.strip())
+    
     await state.set_state(Form.success_criteria)
     await message.answer(
-        "Сформулируйте главный критерий успеха спустя первый месяц использования Индивидуального Протокола:\n\n"
+        "📋 *ШАГ 5: ФИНАЛИЗАЦИЯ И ЛОГИСТИКА*\n\n"
+        "Сформулируйте главный критерий успеха спустя первый месяц использования MIROSLAVSKAYA Skin Protokol:\n\n"
         "Выберите один вариант:",
+        parse_mode="Markdown",
         reply_markup=get_success_criteria_keyboard()
     )
 
 
+# ================== ШАГ 5: ФИНАЛИЗАЦИЯ ==================
 @dp.message(StateFilter(Form.success_criteria))
 async def process_success_criteria(message: types.Message, state: FSMContext):
     await state.update_data(success_criteria=message.text.strip())
+    await state.set_state(Form.full_name)
+    await message.answer(
+        "Анамнез собран. Алгоритм готов сформировать персональный Skin Protokol.\n\n"
+        "Оставьте данные для закрепления результатов за вами и связи со специалистом.\n\n"
+        "Введите ваши *Фамилию, Имя и Отчество*:",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+
+@dp.message(StateFilter(Form.full_name))
+async def process_full_name(message: types.Message, state: FSMContext):
+    await state.update_data(full_name=message.text.strip())
+    await state.set_state(Form.phone)
+    await message.answer(
+        "Введите *контактный телефон* (мессенджер) для связи:",
+        parse_mode="Markdown"
+    )
+
+
+@dp.message(StateFilter(Form.phone))
+async def process_phone(message: types.Message, state: FSMContext):
+    await state.update_data(phone=message.text.strip())
+    await state.set_state(Form.city)
+    await message.answer(
+        "Из какого Вы города? (Важно для понимания жесткости воды и климата)"
+    )
+
+
+@dp.message(StateFilter(Form.city))
+async def process_city(message: types.Message, state: FSMContext):
+    await state.update_data(city=message.text.strip())
+    await state.set_state(Form.climate_change)
+    await message.answer(
+        "Планируются ли у вас поездки в другой климат или активный отдых на солнце в ближайший месяц?\n\n"
+        "Напишите подробно или нажмите кнопку:",
+        reply_markup=get_climate_change_keyboard()
+    )
+
+
+@dp.message(StateFilter(Form.climate_change))
+async def process_climate_change(message: types.Message, state: FSMContext):
+    if message.text == "Не планирую":
+        await state.update_data(climate_change="Не планирую")
+    else:
+        await state.update_data(climate_change=message.text.strip())
+    
+    await state.set_state(Form.birth_date)
+    await message.answer(
+        "Введите свою *дату рождения* в формате *ДД.ММ.ГГГГ*:\n"
+        "(например, 25.12.1990)",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+
+@dp.message(StateFilter(Form.birth_date))
+async def process_birth_date(message: types.Message, state: FSMContext):
+    try:
+        datetime.strptime(message.text.strip(), "%d.%m.%Y")
+    except ValueError:
+        await message.answer(
+            "❌ Неверный формат! Введи дату в формате *ДД.ММ.ГГГГ*:\n"
+            "(например, 25.12.1990)",
+            parse_mode="Markdown"
+        )
+        return
+
+    await state.update_data(birth_date=message.text.strip())
+    await state.set_state(Form.source)
+    await message.answer(
+        "Как вы о нас узнали?",
+        reply_markup=get_source_keyboard()
+    )
+
+
+@dp.message(StateFilter(Form.source))
+async def process_source(message: types.Message, state: FSMContext):
+    await state.update_data(source=message.text.strip())
     
     data = await state.get_data()
     
     report = (
         "📋 ПОЛНАЯ АНКЕТА КЛИЕНТА\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "📌 РАЗДЕЛ 1: ЛИЧНЫЕ ДАННЫЕ\n"
-        f"👤 ФИО: {data.get('full_name', '—')}\n"
-        f"📞 Телефон: {data.get('phone', '—')}\n"
-        f"🎂 Дата рождения: {data.get('birth_date', '—')}\n"
-        f"🔍 Откуда узнали: {data.get('source', '—')}\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "⚠️ РАЗДЕЛ 2: ПРОТИВОПОКАЗАНИЯ\n"
-        f"Противопоказания: {data.get('contraindications', '—')}\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "💆‍♀️ РАЗДЕЛ 3: МИОФАСЦИАЛЬНАЯ ДИАГНОСТИКА\n"
-        f"Напряжение челюстей: {data.get('jaw_tension', '—')}\n"
-        f"Зоны напряжения: {data.get('tension_areas', '—')}\n"
-        f"Утреннее состояние: {data.get('morning_face', '—')}\n"
-        f"Привычки: {data.get('habits', '—')}\n"
-        f"Онемение/покалывание: {data.get('face_numbness', '—')}\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🔍 РАЗДЕЛ 4: ДИАГНОСТИКА КОЖИ\n"
-        f"Хронические заболевания: {data.get('chronic_diseases', '—')}\n"
-        f"Принимаемые препараты: {data.get('medications', '—')}\n"
-        f"Кожные реакции: {data.get('skin_reactions', '—')}\n"
-        f"Состояния кожи: {data.get('skin_conditions', '—')}\n"
-        f"Основные изменения: {data.get('main_concerns', '—')}\n"
-        f"Пигментация: {data.get('pigmentation', '—')}\n"
-        f"Фототип: {data.get('phototype', '—')}\n"
-        f"Тип кожи: {data.get('skin_type', '—')}\n"
-        f"Состояние кожи: {data.get('skin_condition', '—')}\n"
-        f"Текстура кожи: {data.get('skin_texture', '—')}\n"
-        f"Проблемы кожи: {data.get('skin_issues', '—')}\n"
-        f"Чувствительность: {data.get('skin_sensitivity', '—')}\n"
+        "ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА\n"
         f"Приоритеты: {data.get('priorities', '—')}\n"
-        f"Город: {data.get('city', '—')}\n"
-        f"Дата отъезда: {data.get('departure_date', '—')}\n\n"
+        f"Тип кожи: {data.get('skin_type', '—')}\n"
+        f"Фототип: {data.get('phototype', '—')}\n"
+        f"Состояние барьера: {data.get('barrier_state', '—')}\n"
+        f"Визуальные маркеры: {data.get('visual_markers', '—')}\n"
+        f"SOS состояния: {data.get('sos_conditions', '—')}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "📖 РАЗДЕЛ 5: АНАМНЕЗ И ОЖИДАНИЯ\n"
+        "ШАГ 2: ЭКСПЕРТНОСТЬ\n"
+        f"Утреннее состояние: {data.get('morning_face', '—')}\n"
+        f"Зоны напряжения: {data.get('tension_areas', '—')}\n"
+        f"Напряжение челюстей: {data.get('jaw_tension', '—')}\n"
+        f"Привычки: {data.get('habits', '—')}\n"
+        f"Онемение лица: {data.get('face_numbness', '—')}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "ШАГ 3: БЕЗОПАСНОСТЬ\n"
+        f"Противопоказания: {data.get('contraindications', '—')}\n"
+        f"Хронические заболевания: {data.get('chronic_diseases', '—')}\n"
+        f"Препараты: {data.get('medications', '—')}\n"
+        f"Аллергии: {data.get('allergies', '—')}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "ШАГ 4: ТЕКУЩИЙ СТАТУС\n"
         f"Процедуры: {data.get('procedures', '—')}\n"
         f"Домашний уход: {data.get('home_care', '—')}\n"
-        f"Критерий успеха: {data.get('success_criteria', '—')}\n\n"
+        f"Опыт с активами: {data.get('active_experience', '—')}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "ШАГ 5: ФИНАЛИЗАЦИЯ\n"
+        f"Критерий успеха: {data.get('success_criteria', '—')}\n"
+        f"ФИО: {data.get('full_name', '—')}\n"
+        f"Телефон: {data.get('phone', '—')}\n"
+        f"Город: {data.get('city', '—')}\n"
+        f"Смена климата: {data.get('climate_change', '—')}\n"
+        f"Дата рождения: {data.get('birth_date', '—')}\n"
+        f"Откуда узнали: {data.get('source', '—')}\n\n"
         f"👤 Username: @{message.from_user.username if message.from_user.username else 'Не указан'}"
     )
     
@@ -837,7 +787,6 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
         report += "\n\n⚠️ ВНИМАНИЕ: У КЛИЕНТА ЕСТЬ ПРОТИВОПОКАЗАНИЯ!"
     
     try:
-        # Отправляем БЕЗ Markdown (parse_mode=None)
         await bot.send_message(chat_id=OWNER_ID, text=report, parse_mode=None)
         logger.info(f"Анкета отправлена владельцу {OWNER_ID}")
     except Exception as e:
@@ -853,10 +802,11 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
         )
     
     await message.answer(
-        "✅ *Спасибо! Анкета успешно отправлена.*\n\n"
-        "На основании этих данных для вас будет подготовлен предварительный протокол.\n\n"
-        "Специалист свяжется с вами для согласования времени консультации.",
-        parse_mode="Markdown",
+        "Анамнез успешно оцифрован и передан в работу. 🧬\n\n"
+        "Я сохранил твои данные и передал их лично Марии. Сейчас мы анализируем биохимию твоих ответов, чтобы собрать точную формулу твоего Skin Protokol.\n\n"
+        "⏱ Время обработки алгоритма: до 24 часов.\n\n"
+        "Мы свяжемся с тобой по указанному номеру, чтобы презентовать состав твоей персональной капсулы космецевтики.\n\n"
+        "До связи🤍",
         reply_markup=ReplyKeyboardRemove()
     )
     
