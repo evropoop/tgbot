@@ -832,7 +832,7 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
         f"Процедуры: {data.get('procedures', '—')}\n"
         f"Домашний уход: {data.get('home_care', '—')}\n"
         f"Критерий успеха: {data.get('success_criteria', '—')}\n\n"
-        f"👤 Username: `{message.from_user.username if message.from_user.username else 'Не указан'}`"
+        f"👤 Username: @{message.from_user.username if message.from_user.username else 'Не указан'}"
     )
     
     if data.get('has_contraindications', False):
