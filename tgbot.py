@@ -388,7 +388,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def process_start_button(message: types.Message, state: FSMContext):
     await state.set_state(Form.priorities)
     await message.answer(
-        "📋 *ШАГ 1: ВОЗБУЖДЕНИЕ ИНТЕРЕСА*\n\n"
+        "📋 *ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА*\n\n"
         "Выберите до 3-х главных задач, которые необходимо решить:\n\n"
         "Нажмите на кнопку с задачей, чтобы добавить её в список.\n"
         "Когда выберете все задачи, нажмите 'Готово'.",
@@ -518,7 +518,7 @@ async def process_sos_conditions(message: types.Message, state: FSMContext):
     await state.update_data(sos_conditions=message.text.strip())
     await state.set_state(Form.morning_face)
     await message.answer(
-        "📋 *ШАГ 2: ЭКСПЕРТНОСТЬ*\n\n"
+        "📋 *ШАГ 2: ФУНКЦИОНАЛЬНЫЙ И МИОФАСЦИАЛЬНЫЙ ТЕСТ*\n\n"
         "Опишите привычное утреннее состояние вашего лица:",
         parse_mode="Markdown",
         reply_markup=get_morning_face_keyboard()
@@ -577,7 +577,7 @@ async def process_face_numbness(message: types.Message, state: FSMContext):
     await state.update_data(face_numbness=message.text.strip())
     await state.set_state(Form.contraindications)
     await message.answer(
-        "📋 *ШАГ 3: БЕЗОПАСНОСТЬ*\n\n"
+        "📋 *ШАГ 3: КЛИНИЧЕСКИЙ СКРИНИНГ*\n\n"
         "Есть ли у вас следующие абсолютные противопоказания?",
         parse_mode="Markdown",
         reply_markup=get_contraindications_keyboard()
@@ -631,7 +631,7 @@ async def process_allergies(message: types.Message, state: FSMContext):
         field_name="allergies",
         keyboard_func=get_allergies_keyboard,
         next_state=Form.procedures,
-        next_question="📋 *ШАГ 4: ТЕКУЩИЙ СТАТУС*\n\n"
+        next_question="📋 *ШАГ 4: АУДИТ ТЕКУЩЕГО УХОДА*\n\n"
         "Какие косметологические процедуры вы проходили за последние 12 месяцев? "
         "(Чистки, пилинги, инъекции, лазер, нити).\n\n"
         "Напишите подробно или нажмите кнопку:",
@@ -684,7 +684,7 @@ async def process_active_experience(message: types.Message, state: FSMContext):
     
     await state.set_state(Form.success_criteria)
     await message.answer(
-        "📋 *ШАГ 5: ФИНАЛИЗАЦИЯ И ЛОГИСТИКА*\n\n"
+        "📋 *ШАГ 5: РЕГИСТРАЦИЯ ДАННЫХ И ОФОРМЛЕНИЕ SKIN PROTOKOL*\n\n"
         "Сформулируйте главный критерий успеха спустя первый месяц использования MIROSLAVSKAYA Skin Protokol:\n\n"
         "Выберите один вариант:",
         parse_mode="Markdown",
