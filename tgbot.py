@@ -65,10 +65,8 @@ async def log_user_step(message: types.Message, state_name: str, state: FSMConte
     
     step_name = STEP_NAMES.get(state_name, state_name)
     
-    # Логируем в консоль
     logger.info(f"📌 {username} (ID: {user_id}) на шаге: {step_name}")
     
-    # Отправляем уведомление владельцу
     try:
         await bot.send_message(
             chat_id=OWNER_ID,
@@ -136,7 +134,7 @@ def get_start_keyboard():
     return make_keyboard(["▶️ СТАРТ"], cols=1)
 
 
-# ================== ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА ==================
+# ================== ШАГ 1 ==================
 def get_priorities_keyboard():
     buttons = [
         "Морщины и потеря тонуса",
@@ -200,7 +198,7 @@ def get_sos_conditions_keyboard():
     return make_keyboard(buttons, cols=1)
 
 
-# ================== ШАГ 2: ФУНКЦИОНАЛЬНЫЙ И МИОФАСЦИАЛЬНЫЙ ТЕСТ ==================
+# ================== ШАГ 2 ==================
 def get_morning_face_keyboard():
     buttons = [
         "Отечное",
@@ -237,7 +235,7 @@ def get_face_numbness_keyboard():
     return make_keyboard(["Да, часто", "Иногда", "Нет"], cols=3)
 
 
-# ================== ШАГ 3: КЛИНИЧЕСКИЙ СКРИНИНГ ==================
+# ================== ШАГ 3 ==================
 def get_contraindications_keyboard():
     buttons = [
         "Беременность/Лактация",
@@ -285,7 +283,7 @@ def get_allergies_keyboard():
     return make_keyboard_with_ready(buttons, cols=1)
 
 
-# ================== ШАГ 4: АУДИТ ТЕКУЩЕГО УХОДА ==================
+# ================== ШАГ 4 ==================
 def get_procedures_keyboard():
     return make_keyboard(["Не проходил(а)"], cols=1)
 
@@ -298,7 +296,7 @@ def get_active_experience_keyboard():
     return make_keyboard(["Не пробовал(а)"], cols=1)
 
 
-# ================== ШАГ 5: РЕГИСТРАЦИЯ ДАННЫХ ==================
+# ================== ШАГ 5 ==================
 def get_success_criteria_keyboard():
     buttons = [
         "Визуальный: Ушла «серость», появился ровный тон, ткани стали плотнее.",
@@ -443,7 +441,7 @@ async def process_start_button(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА ==================
+# ================== ШАГ 1 ==================
 @dp.message(StateFilter(Form.priorities))
 async def process_priorities(message: types.Message, state: FSMContext):
     await log_user_step(message, "priorities", state)
@@ -577,7 +575,7 @@ async def process_sos_conditions(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 2: ФУНКЦИОНАЛЬНЫЙ И МИОФАСЦИАЛЬНЫЙ ТЕСТ ==================
+# ================== ШАГ 2 ==================
 @dp.message(StateFilter(Form.morning_face))
 async def process_morning_face(message: types.Message, state: FSMContext):
     await log_user_step(message, "morning_face", state)
@@ -641,7 +639,7 @@ async def process_face_numbness(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 3: КЛИНИЧЕСКИЙ СКРИНИНГ ==================
+# ================== ШАГ 3 ==================
 @dp.message(StateFilter(Form.contraindications))
 async def process_contraindications(message: types.Message, state: FSMContext):
     await log_user_step(message, "contraindications", state)
@@ -700,7 +698,7 @@ async def process_allergies(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 4: АУДИТ ТЕКУЩЕГО УХОДА ==================
+# ================== ШАГ 4 ==================
 @dp.message(StateFilter(Form.procedures))
 async def process_procedures(message: types.Message, state: FSMContext):
     await log_user_step(message, "procedures", state)
@@ -756,7 +754,7 @@ async def process_active_experience(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ШАГ 5: РЕГИСТРАЦИЯ ДАННЫХ ==================
+# ================== ШАГ 5 ==================
 @dp.message(StateFilter(Form.success_criteria))
 async def process_success_criteria(message: types.Message, state: FSMContext):
     await log_user_step(message, "success_criteria", state)
@@ -842,6 +840,7 @@ async def process_birth_date(message: types.Message, state: FSMContext):
     )
 
 
+# ================== ОТПРАВКА ОТЧЁТА В КОНСОЛЬ И В TELEGRAM ==================
 @dp.message(StateFilter(Form.source))
 async def process_source(message: types.Message, state: FSMContext):
     await log_user_step(message, "source", state)
@@ -892,9 +891,25 @@ async def process_source(message: types.Message, state: FSMContext):
     if data.get('has_contraindications', False):
         report += "\n\n⚠️ ВНИМАНИЕ: У КЛИЕНТА ЕСТЬ ПРОТИВОПОКАЗАНИЯ!"
     
+    # ======= ВЫВОД В КОНСОЛЬ =======
+    print("\n" + "="*70)
+    print("📋 НОВАЯ АНКЕТА")
+    print("="*70)
+    print(report)
+    print("="*70 + "\n")
+    
+    # ======= ОТПРАВКА В TELEGRAM (владельцу) =======
     try:
-        await bot.send_message(chat_id=OWNER_ID, text=report, parse_mode=None)
-        logger.info(f"Анкета отправлена владельцу {OWNER_ID}")
+        if len(report) > 4096:
+            await bot.send_message(
+                chat_id=OWNER_ID,
+                text=report[:4000] + "\n\n... (текст обрезан)",
+                parse_mode=None
+            )
+            logger.warning(f"Отчёт обрезан, длина {len(report)} символов")
+        else:
+            await bot.send_message(chat_id=OWNER_ID, text=report, parse_mode=None)
+            logger.info(f"Анкета отправлена владельцу {OWNER_ID}")
     except Exception as e:
         logger.error(f"Не удалось отправить владельцу: {e}")
     
@@ -919,7 +934,7 @@ async def process_source(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-# ================== ОБРАБОТКА ДРУГИХ СООБЩЕНИЙ (ЛОГИРУЕМ ВЫХОД) ==================
+# ================== ОБРАБОТКА ДРУГИХ СООБЩЕНИЙ ==================
 @dp.message()
 async def handle_other_messages(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -932,12 +947,10 @@ async def handle_other_messages(message: types.Message, state: FSMContext):
             reply_markup=get_start_keyboard()
         )
     else:
-        # Если пользователь написал что-то не по делу — логируем выход
         username = message.from_user.username or "без username"
         step_name = STEP_NAMES.get(current_state.state if current_state else "неизвестно", "неизвестно")
         logger.warning(f"⚠️ {username} (ID: {message.from_user.id}) ВЫШЕЛ на шаге: {step_name}")
         
-        # Отправляем уведомление о выходе
         try:
             await bot.send_message(
                 chat_id=OWNER_ID,
