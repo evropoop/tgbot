@@ -28,59 +28,6 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=storage)
 
 
-# ================== СЛОВАРЬ ШАГОВ ДЛЯ ЛОГИРОВАНИЯ ==================
-STEP_NAMES = {
-    "priorities": "ШАГ 1: Выбор приоритетов",
-    "skin_type": "ШАГ 1: Тип кожи",
-    "phototype": "ШАГ 1: Фототип",
-    "barrier_state": "ШАГ 1: Состояние барьера",
-    "visual_markers": "ШАГ 1: Визуальные маркеры",
-    "sos_conditions": "ШАГ 1: SOS состояния",
-    "morning_face": "ШАГ 2: Утреннее состояние",
-    "tension_areas": "ШАГ 2: Зоны напряжения",
-    "jaw_tension": "ШАГ 2: Напряжение челюстей",
-    "habits": "ШАГ 2: Привычки",
-    "face_numbness": "ШАГ 2: Онемение лица",
-    "contraindications": "ШАГ 3: Противопоказания",
-    "chronic_diseases": "ШАГ 3: Хронические заболевания",
-    "medications": "ШАГ 3: Препараты",
-    "allergies": "ШАГ 3: Аллергии",
-    "procedures": "ШАГ 4: Процедуры",
-    "home_care": "ШАГ 4: Домашний уход",
-    "active_experience": "ШАГ 4: Опыт с активами",
-    "success_criteria": "ШАГ 5: Критерий успеха",
-    "full_name": "ШАГ 5: ФИО",
-    "phone": "ШАГ 5: Телефон",
-    "city": "ШАГ 5: Город",
-    "climate_change": "ШАГ 5: Смена климата",
-    "birth_date": "ШАГ 5: Дата рождения",
-    "source": "ШАГ 5: Откуда узнали"
-}
-
-# ================== ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ ШАГОВ ==================
-async def log_user_step(message: types.Message, state_name: str, state: FSMContext):
-    """Логирует текущий шаг пользователя"""
-    username = message.from_user.username or "без username"
-    user_id = message.from_user.id
-    
-    step_name = STEP_NAMES.get(state_name, state_name)
-    
-    logger.info(f"📌 {username} (ID: {user_id}) на шаге: {step_name}")
-    
-    try:
-        await bot.send_message(
-            chat_id=OWNER_ID,
-            text=f"📊 *Пользователь на шаге:*\n"
-                 f"👤 @{username}\n"
-                 f"🆔 ID: `{user_id}`\n"
-                 f"📍 Шаг: {step_name}\n"
-                 f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logger.error(f"Не удалось отправить уведомление о шаге: {e}")
-
-
 # ================== FSM СОСТОЯНИЯ ==================
 class Form(StatesGroup):
     waiting_for_start = State()
@@ -134,7 +81,6 @@ def get_start_keyboard():
     return make_keyboard(["▶️ СТАРТ"], cols=1)
 
 
-# ================== ШАГ 1 ==================
 def get_priorities_keyboard():
     buttons = [
         "Морщины и потеря тонуса",
@@ -198,7 +144,6 @@ def get_sos_conditions_keyboard():
     return make_keyboard(buttons, cols=1)
 
 
-# ================== ШАГ 2 ==================
 def get_morning_face_keyboard():
     buttons = [
         "Отечное",
@@ -235,7 +180,6 @@ def get_face_numbness_keyboard():
     return make_keyboard(["Да, часто", "Иногда", "Нет"], cols=3)
 
 
-# ================== ШАГ 3 ==================
 def get_contraindications_keyboard():
     buttons = [
         "Беременность/Лактация",
@@ -283,7 +227,6 @@ def get_allergies_keyboard():
     return make_keyboard_with_ready(buttons, cols=1)
 
 
-# ================== ШАГ 4 ==================
 def get_procedures_keyboard():
     return make_keyboard(["Не проходил(а)"], cols=1)
 
@@ -296,7 +239,6 @@ def get_active_experience_keyboard():
     return make_keyboard(["Не пробовал(а)"], cols=1)
 
 
-# ================== ШАГ 5 ==================
 def get_success_criteria_keyboard():
     buttons = [
         "Визуальный: Ушла «серость», появился ровный тон, ткани стали плотнее.",
@@ -429,7 +371,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.waiting_for_start), F.text == "▶️ СТАРТ")
 async def process_start_button(message: types.Message, state: FSMContext):
-    await log_user_step(message, "priorities", state)
     await state.set_state(Form.priorities)
     await message.answer(
         "📋 *ШАГ 1: ПЕРВИЧНЫЙ СБОР АНАМНЕЗА*\n\n"
@@ -444,7 +385,6 @@ async def process_start_button(message: types.Message, state: FSMContext):
 # ================== ШАГ 1 ==================
 @dp.message(StateFilter(Form.priorities))
 async def process_priorities(message: types.Message, state: FSMContext):
-    await log_user_step(message, "priorities", state)
     if 'priorities_list' not in await state.get_data():
         await state.update_data(priorities_list=[])
     
@@ -515,7 +455,6 @@ async def process_priorities(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.skin_type))
 async def process_skin_type(message: types.Message, state: FSMContext):
-    await log_user_step(message, "skin_type", state)
     await state.update_data(skin_type=message.text.strip())
     await state.set_state(Form.phototype)
     await message.answer(
@@ -526,7 +465,6 @@ async def process_skin_type(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.phototype))
 async def process_phototype(message: types.Message, state: FSMContext):
-    await log_user_step(message, "phototype", state)
     await state.update_data(phototype=message.text.strip())
     await state.set_state(Form.barrier_state)
     await message.answer(
@@ -538,7 +476,6 @@ async def process_phototype(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.barrier_state))
 async def process_barrier_state(message: types.Message, state: FSMContext):
-    await log_user_step(message, "barrier_state", state)
     await handle_multiple_choice(
         message, state,
         field_name="barrier_state",
@@ -551,7 +488,6 @@ async def process_barrier_state(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.visual_markers))
 async def process_visual_markers(message: types.Message, state: FSMContext):
-    await log_user_step(message, "visual_markers", state)
     await handle_multiple_choice(
         message, state,
         field_name="visual_markers",
@@ -564,7 +500,6 @@ async def process_visual_markers(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.sos_conditions))
 async def process_sos_conditions(message: types.Message, state: FSMContext):
-    await log_user_step(message, "sos_conditions", state)
     await state.update_data(sos_conditions=message.text.strip())
     await state.set_state(Form.morning_face)
     await message.answer(
@@ -578,7 +513,6 @@ async def process_sos_conditions(message: types.Message, state: FSMContext):
 # ================== ШАГ 2 ==================
 @dp.message(StateFilter(Form.morning_face))
 async def process_morning_face(message: types.Message, state: FSMContext):
-    await log_user_step(message, "morning_face", state)
     await state.update_data(morning_face=message.text.strip())
     await state.set_state(Form.tension_areas)
     await message.answer(
@@ -590,7 +524,6 @@ async def process_morning_face(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.tension_areas))
 async def process_tension_areas(message: types.Message, state: FSMContext):
-    await log_user_step(message, "tension_areas", state)
     await handle_multiple_choice(
         message, state,
         field_name="tension_areas",
@@ -603,7 +536,6 @@ async def process_tension_areas(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.jaw_tension))
 async def process_jaw_tension(message: types.Message, state: FSMContext):
-    await log_user_step(message, "jaw_tension", state)
     await state.update_data(jaw_tension=message.text.strip())
     await state.set_state(Form.habits)
     await message.answer(
@@ -615,7 +547,6 @@ async def process_jaw_tension(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.habits))
 async def process_habits(message: types.Message, state: FSMContext):
-    await log_user_step(message, "habits", state)
     await handle_multiple_choice(
         message, state,
         field_name="habits",
@@ -628,7 +559,6 @@ async def process_habits(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.face_numbness))
 async def process_face_numbness(message: types.Message, state: FSMContext):
-    await log_user_step(message, "face_numbness", state)
     await state.update_data(face_numbness=message.text.strip())
     await state.set_state(Form.contraindications)
     await message.answer(
@@ -642,7 +572,6 @@ async def process_face_numbness(message: types.Message, state: FSMContext):
 # ================== ШАГ 3 ==================
 @dp.message(StateFilter(Form.contraindications))
 async def process_contraindications(message: types.Message, state: FSMContext):
-    await log_user_step(message, "contraindications", state)
     await state.update_data(contraindications=message.text.strip())
     
     has_contraindications = message.text.strip() != "Нет ни одного из вышеперечисленного"
@@ -658,7 +587,6 @@ async def process_contraindications(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.chronic_diseases))
 async def process_chronic_diseases(message: types.Message, state: FSMContext):
-    await log_user_step(message, "chronic_diseases", state)
     await handle_multiple_choice(
         message, state,
         field_name="chronic_diseases",
@@ -671,7 +599,6 @@ async def process_chronic_diseases(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.medications))
 async def process_medications(message: types.Message, state: FSMContext):
-    await log_user_step(message, "medications", state)
     await handle_multiple_choice(
         message, state,
         field_name="medications",
@@ -684,7 +611,6 @@ async def process_medications(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.allergies))
 async def process_allergies(message: types.Message, state: FSMContext):
-    await log_user_step(message, "allergies", state)
     await handle_multiple_choice(
         message, state,
         field_name="allergies",
@@ -701,7 +627,6 @@ async def process_allergies(message: types.Message, state: FSMContext):
 # ================== ШАГ 4 ==================
 @dp.message(StateFilter(Form.procedures))
 async def process_procedures(message: types.Message, state: FSMContext):
-    await log_user_step(message, "procedures", state)
     if message.text == "Не проходил(а)":
         await state.update_data(procedures="Не проходил(а)")
     else:
@@ -721,7 +646,6 @@ async def process_procedures(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.home_care))
 async def process_home_care(message: types.Message, state: FSMContext):
-    await log_user_step(message, "home_care", state)
     if message.text == "Уход отсутствует":
         await state.update_data(home_care="Уход отсутствует")
     else:
@@ -738,7 +662,6 @@ async def process_home_care(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.active_experience))
 async def process_active_experience(message: types.Message, state: FSMContext):
-    await log_user_step(message, "active_experience", state)
     if message.text == "Не пробовал(а)":
         await state.update_data(active_experience="Не пробовал(а)")
     else:
@@ -757,7 +680,6 @@ async def process_active_experience(message: types.Message, state: FSMContext):
 # ================== ШАГ 5 ==================
 @dp.message(StateFilter(Form.success_criteria))
 async def process_success_criteria(message: types.Message, state: FSMContext):
-    await log_user_step(message, "success_criteria", state)
     await state.update_data(success_criteria=message.text.strip())
     await state.set_state(Form.full_name)
     await message.answer(
@@ -771,7 +693,6 @@ async def process_success_criteria(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.full_name))
 async def process_full_name(message: types.Message, state: FSMContext):
-    await log_user_step(message, "full_name", state)
     await state.update_data(full_name=message.text.strip())
     await state.set_state(Form.phone)
     await message.answer(
@@ -782,7 +703,6 @@ async def process_full_name(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.phone))
 async def process_phone(message: types.Message, state: FSMContext):
-    await log_user_step(message, "phone", state)
     await state.update_data(phone=message.text.strip())
     await state.set_state(Form.city)
     await message.answer(
@@ -792,7 +712,6 @@ async def process_phone(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.city))
 async def process_city(message: types.Message, state: FSMContext):
-    await log_user_step(message, "city", state)
     await state.update_data(city=message.text.strip())
     await state.set_state(Form.climate_change)
     await message.answer(
@@ -804,7 +723,6 @@ async def process_city(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.climate_change))
 async def process_climate_change(message: types.Message, state: FSMContext):
-    await log_user_step(message, "climate_change", state)
     if message.text == "Не планирую":
         await state.update_data(climate_change="Не планирую")
     else:
@@ -821,7 +739,6 @@ async def process_climate_change(message: types.Message, state: FSMContext):
 
 @dp.message(StateFilter(Form.birth_date))
 async def process_birth_date(message: types.Message, state: FSMContext):
-    await log_user_step(message, "birth_date", state)
     try:
         datetime.strptime(message.text.strip(), "%d.%m.%Y")
     except ValueError:
@@ -840,10 +757,9 @@ async def process_birth_date(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ОТПРАВКА ОТЧЁТА В КОНСОЛЬ И В TELEGRAM ==================
+# ================== ОТПРАВКА ОТЧЁТА В КОНСОЛЬ ==================
 @dp.message(StateFilter(Form.source))
 async def process_source(message: types.Message, state: FSMContext):
-    await log_user_step(message, "source", state)
     await state.update_data(source=message.text.strip())
     
     data = await state.get_data()
@@ -947,24 +863,6 @@ async def handle_other_messages(message: types.Message, state: FSMContext):
             reply_markup=get_start_keyboard()
         )
     else:
-        username = message.from_user.username or "без username"
-        step_name = STEP_NAMES.get(current_state.state if current_state else "неизвестно", "неизвестно")
-        logger.warning(f"⚠️ {username} (ID: {message.from_user.id}) ВЫШЕЛ на шаге: {step_name}")
-        
-        try:
-            await bot.send_message(
-                chat_id=OWNER_ID,
-                text=f"🚫 *ВЫХОД ПОЛЬЗОВАТЕЛЯ*\n"
-                     f"👤 @{username}\n"
-                     f"🆔 ID: `{message.from_user.id}`\n"
-                     f"📍 Последний шаг: {step_name}\n"
-                     f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-                     f"📝 Сообщение: {message.text[:50]}...",
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            logger.error(f"Не удалось отправить уведомление о выходе: {e}")
-        
         await message.answer(
             "Пожалуйста, нажми /start, чтобы начать заполнение анкеты."
         )
