@@ -19,7 +19,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден! Добавьте переменную окружения BOT_TOKEN.")
 
-OWNER_ID = 1745568601
+# Список ID получателей анкет
+OWNER_IDS = [1745568601, 7875791813]  # твой ID и ID @miroslavskayaboks
+
 IMAGE_URL = "https://pbt.storage.yandexcloud.net/cp_upload/3226d6315635f4e60bebd98a6421ea7a_full.jpeg"
 
 # ================== ИНИЦИАЛИЗАЦИЯ ==================
@@ -757,7 +759,7 @@ async def process_birth_date(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ОТПРАВКА ОТЧЁТА В КОНСОЛЬ ==================
+# ================== ОТПРАВКА ОТЧЁТА В КОНСОЛЬ И В ДВА TELEGRAM-АККАУНТА ==================
 @dp.message(StateFilter(Form.source))
 async def process_source(message: types.Message, state: FSMContext):
     await state.update_data(source=message.text.strip())
@@ -814,20 +816,21 @@ async def process_source(message: types.Message, state: FSMContext):
     print(report)
     print("="*70 + "\n")
     
-    # ======= ОТПРАВКА В TELEGRAM (владельцу) =======
-    try:
-        if len(report) > 4096:
-            await bot.send_message(
-                chat_id=OWNER_ID,
-                text=report[:4000] + "\n\n... (текст обрезан)",
-                parse_mode=None
-            )
-            logger.warning(f"Отчёт обрезан, длина {len(report)} символов")
-        else:
-            await bot.send_message(chat_id=OWNER_ID, text=report, parse_mode=None)
-            logger.info(f"Анкета отправлена владельцу {OWNER_ID}")
-    except Exception as e:
-        logger.error(f"Не удалось отправить владельцу: {e}")
+    # ======= ОТПРАВКА В TELEGRAM (двум владельцам) =======
+    for owner_id in OWNER_IDS:
+        try:
+            if len(report) > 4096:
+                await bot.send_message(
+                    chat_id=owner_id,
+                    text=report[:4000] + "\n\n... (текст обрезан)",
+                    parse_mode=None
+                )
+                logger.warning(f"Отчёт обрезан для {owner_id}, длина {len(report)} символов")
+            else:
+                await bot.send_message(chat_id=owner_id, text=report, parse_mode=None)
+                logger.info(f"Анкета отправлена владельцу {owner_id}")
+        except Exception as e:
+            logger.error(f"Не удалось отправить владельцу {owner_id}: {e}")
     
     if data.get('has_contraindications', False):
         await message.answer(
