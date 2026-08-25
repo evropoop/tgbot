@@ -759,7 +759,7 @@ async def process_birth_date(message: types.Message, state: FSMContext):
     )
 
 
-# ================== ОТПРАВКА ОТЧЁТА В КОНСОЛЬ И В ДВА TELEGRAM-АККАУНТА ==================
+# ================== ШАГ 5: ОТПРАВКА ОТЧЁТА В КОНСОЛЬ И В TELEGRAM ==================
 @dp.message(StateFilter(Form.source))
 async def process_source(message: types.Message, state: FSMContext):
     await state.update_data(source=message.text.strip())
@@ -841,12 +841,13 @@ async def process_source(message: types.Message, state: FSMContext):
             reply_markup=ReplyKeyboardRemove()
         )
     
+    # ======= НОВОЕ ФИНАЛЬНОЕ СООБЩЕНИЕ =======
     await message.answer(
-        "Анамнез успешно оцифрован и передан в работу. 🧬\n\n"
-        "Я сохранил твои данные и передал их лично Марии. Сейчас мы анализируем биохимию твоих ответов, чтобы собрать точную формулу твоего Skin Protokol.\n\n"
-        "⏱ Время обработки алгоритма: до 24 часов.\n\n"
-        "Мы свяжемся с тобой по указанному номеру, чтобы презентовать состав твоей персональной капсулы космецевтики.\n\n"
-        "До связи🤍",
+        "Анкета принята в работу!\n\n"
+        "В связи с очень большим потоком заявок, ваша анкета будет детально рассмотрена в течение 3–4 дней. "
+        "Я разбираю каждый случай вручную.\n\n"
+        "Если у вас действительно срочная ситуация — напишите мне лично: @MiroslavskayaKosm.\n\n"
+        "До скорой связи!",
         reply_markup=ReplyKeyboardRemove()
     )
     
