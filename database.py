@@ -82,10 +82,15 @@ def init_db():
                 operator_id INTEGER,
                 client_id INTEGER,
                 is_focused INTEGER DEFAULT 1,
+                window_msg_id INTEGER,
                 started_at TEXT,
                 PRIMARY KEY (operator_id, client_id)
             )
         """)
+        try:
+            cursor.execute("ALTER TABLE active_dialogs ADD COLUMN window_msg_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
 
         # Таблица маршрутизации сообщений для ответа через Reply (свайп)
         cursor.execute("""
@@ -261,7 +266,7 @@ def get_client_by_operator_msg_id(operator_msg_id: int, operator_id: Optional[in
         return row["client_id"] if row else None
 
 
-def set_active_dialog(operator_id: int, client_id: int):
+def set_active_dialog(operator_id: int, client_id: int, window_msg_id: Optional[int] = None):
     """Активирует диалог с клиентом и переключает фокус оператора на него."""
     now = datetime.now().isoformat()
     with get_connection() as conn:
@@ -269,12 +274,42 @@ def set_active_dialog(operator_id: int, client_id: int):
         # Снимаем фокус с других диалогов этого оператора
         cursor.execute("UPDATE active_dialogs SET is_focused = 0 WHERE operator_id = ?", (operator_id,))
         # Добавляем или обновляем диалог с данным клиентом как сфокусированный
-        cursor.execute("""
-            INSERT INTO active_dialogs (operator_id, client_id, is_focused, started_at)
-            VALUES (?, ?, 1, ?)
-            ON CONFLICT(operator_id, client_id) DO UPDATE SET is_focused = 1
-        """, (operator_id, client_id, now))
+        if window_msg_id is not None:
+            cursor.execute("""
+                INSERT INTO active_dialogs (operator_id, client_id, is_focused, window_msg_id, started_at)
+                VALUES (?, ?, 1, ?, ?)
+                ON CONFLICT(operator_id, client_id) DO UPDATE SET is_focused = 1, window_msg_id = excluded.window_msg_id
+            """, (operator_id, client_id, window_msg_id, now))
+        else:
+            cursor.execute("""
+                INSERT INTO active_dialogs (operator_id, client_id, is_focused, started_at)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(operator_id, client_id) DO UPDATE SET is_focused = 1
+            """, (operator_id, client_id, now))
         conn.commit()
+
+
+def set_dialog_window_msg_id(operator_id: int, client_id: int, window_msg_id: int):
+    """Сохраняет ID сообщения диалогового окна оператора для динамического обновления."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE active_dialogs SET window_msg_id = ?
+            WHERE operator_id = ? AND client_id = ?
+        """, (window_msg_id, operator_id, client_id))
+        conn.commit()
+
+
+def get_dialog_window_msg_id(operator_id: int, client_id: int) -> Optional[int]:
+    """Возвращает ID сообщения диалогового окна оператора."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT window_msg_id FROM active_dialogs
+            WHERE operator_id = ? AND client_id = ?
+        """, (operator_id, client_id))
+        row = cursor.fetchone()
+        return row["window_msg_id"] if row and row["window_msg_id"] else None
 
 
 def get_active_dialog_for_operator(operator_id: int) -> Optional[int]:

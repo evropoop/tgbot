@@ -77,21 +77,65 @@ WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
 IGNORED_MEDIA_GROUPS: Set[str] = set()
 
 
+def format_dialog_window_text(client_id: int, operator_id: int) -> str:
+    """Формирует визуальное диалоговое окно клиента с рамкой, шапкой, карточкой и историей."""
+    client_info = db.get_user(client_id) or {}
+    client_name = client_info.get("user_name") or f"Клиент {client_id}"
+    username_display = f"@{client_info.get('username')}" if client_info.get('username') else f"ID: {client_id}"
+    care_answer = client_info.get("care_answer") or "Не указан"
+
+    history = db.get_chat_history(client_id, limit=10)
+    if history:
+        history_lines = []
+        for m in history:
+            time_str = m.get("created_at", "").split(" ")[-1] if m.get("created_at") else ""
+            prefix = f"👤 <b>{html.escape(client_name)}</b>" if m["sender_type"] == "client" else "👩‍⚕️ <b>Вы</b>"
+            time_label = f" <i>({time_str})</i>" if time_str else ""
+            txt = html.escape(m.get("text", "")[:350])
+            history_lines.append(f"{prefix}{time_label}:\n«{txt}»")
+        history_block = "\n\n".join(history_lines)
+    else:
+        history_block = "<i>(Предыдущих сообщений в переписке пока нет)</i>"
+
+    window_text = (
+        "╔══════════════════════════════════════╗\n"
+        f"💬 <b>ДИАЛОГОВОЕ ОКНО: {html.escape(client_name)}</b>\n"
+        f"👤 <b>Клиент:</b> {html.escape(client_name)} ({username_display})\n"
+        f"🆔 <code>{client_id}</code> | 🟢 <b>В ДИАЛОГЕ</b>\n"
+        f"🧴 <b>Текущий уход:</b> {html.escape(care_answer)}\n"
+        "╠══════════════════════════════════════╣\n"
+        "📜 <b>ИСТОРИЯ ПЕРЕПИСКИ:</b>\n\n"
+        f"{history_block}\n\n"
+        "╠══════════════════════════════════════╣\n"
+        "✍️ <i>Все ваши обычные сообщения уходят клиенту.\n"
+        "Для выхода нажмите кнопку ниже или в нижней панели.</i>\n"
+        "╚══════════════════════════════════════╝"
+    )
+    return window_text
+
+
+def get_dialog_window_keyboard(client_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопки управления диалоговым окном внутри бота."""
+    buttons = [
+        [
+            InlineKeyboardButton(text="🔄 Обновить окно", callback_data=f"refresh_window:{client_id}"),
+            InlineKeyboardButton(text="📋 Анкета клиента", callback_data=f"show_survey:{client_id}")
+        ],
+        [
+            InlineKeyboardButton(text="⬅️ Выйти из окна (сохранить)", callback_data="leave_chat_cb"),
+            InlineKeyboardButton(text="❌ Завершить диалог", callback_data=f"close_dialog:{client_id}")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def get_dialog_inline_keyboard(client_id: int, is_active: bool = False) -> InlineKeyboardMarkup:
-    """Генерирует инлайн-кнопки для карточки клиента или диалога (включая Web App при наличии WEBAPP_URL)."""
+    """Генерирует инлайн-кнопку открытия диалогового окна клиента."""
     buttons = []
     client_info = db.get_user(client_id)
     cname = client_info.get("user_name", "Клиент") if client_info else "Клиент"
 
-    if WEBAPP_URL:
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"📱 Открыть окно чата: {cname[:12]}",
-                web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={client_id}")
-            )
-        ])
-
-    btn_label = f"🟢 В ДИАЛОГЕ: {cname[:12]}" if is_active else "💬 Войти в чат"
+    btn_label = f"🟢 В ДИАЛОГЕ: {cname[:12]}" if is_active else f"💬 Открыть окно диалога: {cname[:12]}"
     buttons.append([
         InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{client_id}")
     ])
@@ -1135,69 +1179,39 @@ async def handle_start_dialog(callback: types.CallbackQuery):
     client_name = client_info.get("user_name") if client_info else "Клиент"
     username_display = f"@{client_info.get('username')}" if client_info and client_info.get('username') else f"ID: {client_id}"
 
-    # 1. Характерное всплывающее уведомление
-    await callback.answer(f"🟢 Диалог с {client_name} активирован!", show_alert=False)
+    # 1. Всплывающее уведомление
+    await callback.answer(f"🟢 Открываем окно: {client_name}...", show_alert=False)
 
-    # 2. Фиксируем диалог в БД и переключаем фокус
-    db.set_active_dialog(operator_id, client_id)
-
-    # 3. Характерное изменение кнопки на самой карточке (кнопка становится «🟢 В ДИАЛОГЕ»)
-    # Текст карточки клиента не удаляется!
+    # 2. Обновляем статус на карточке
     try:
         active_kb = get_dialog_inline_keyboard(client_id, is_active=True)
         await callback.message.edit_reply_markup(reply_markup=active_kb)
-    except Exception as e:
-        logger.warning(f"Не удалось обновить статус на карточке: {e}")
+    except Exception:
+        pass
 
-    # 4. Подтягиваем историю сообщений клиента
-    history = db.get_chat_history(client_id, limit=10)
-    if history:
-        history_lines = []
-        for m in history:
-            time_str = m.get("created_at", "").split(" ")[-1] if m.get("created_at") else ""
-            prefix = f"👤 <b>{html.escape(client_name)}</b>" if m["sender_type"] == "client" else "👩‍⚕️ <b>Вы</b>"
-            time_label = f" <i>({time_str})</i>" if time_str else ""
-            txt = html.escape(m.get("text", "")[:300])
-            history_lines.append(f"{prefix}{time_label}:\n«{txt}»")
-        history_block = "\n\n".join(history_lines)
-    else:
-        history_block = "<i>(Предыдущих сообщений в переписке пока нет)</i>"
-
-    # 5. Характерный визуальный баннер активации с историей в чат оператора
-    banner_text = (
-        "🟢 ━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💬 <b>ВХОД В ДИАЛОГ: {html.escape(client_name)}</b>\n"
-        f"👤 <b>Клиент:</b> {html.escape(client_name)} ({username_display})\n"
-        f"🆔 <code>{client_id}</code>\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "📜 <b>ПОСЛЕДНИЕ СООБЩЕНИЯ ДИАЛОГА:</b>\n\n"
-        f"{history_block}\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━ 🟢\n"
-        "✍️ <i>Все ваши обычные сообщения теперь отправляются этому клиенту.\n"
-        "Для выхода из чата нажмите «⬅️ Выйти из чата (сохранить)» в нижней панели.</i>"
-    )
+    # 3. Формируем и отправляем ДИАЛОГОВОЕ ОКНО в чат оператора
+    window_text = format_dialog_window_text(client_id, operator_id)
+    window_kb = get_dialog_window_keyboard(client_id)
     kb_end = get_operator_keyboard(operator_id)
-    await bot.send_message(
+
+    window_msg = await bot.send_message(
         chat_id=operator_id,
-        text=banner_text,
+        text=window_text,
         parse_mode="HTML",
-        reply_markup=kb_end
+        reply_markup=window_kb
     )
 
-    # Если настроен WEBAPP_URL, предлагаем кнопку открытия отдельного окна
-    if WEBAPP_URL:
+    # 4. Фиксируем диалог в БД и сохраняем window_msg_id для авто-обновления
+    db.set_active_dialog(operator_id, client_id, window_msg_id=window_msg.message_id)
+
+    # Обновляем нижнюю перманентную клавиатуру
+    if kb_end:
         try:
-            app_kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text=f"📱 Открыть диалоговое окно: {client_name[:12]}",
-                    web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={client_id}")
-                )]
-            ])
             await bot.send_message(
                 chat_id=operator_id,
-                text="📱 <i>Или откройте диалоговое окно приложения прямо в Telegram:</i>",
+                text="<i>Управление диалогом доступно на кнопках ниже:</i>",
                 parse_mode="HTML",
-                reply_markup=app_kb
+                reply_markup=kb_end
             )
         except Exception:
             pass
@@ -1212,6 +1226,145 @@ async def handle_start_dialog(callback: types.CallbackQuery):
         logger.warning(f"Не удалось отправить уведомление клиенту {client_id}: {ce}")
 
     logger.info(f"Оператор {operator_id} активировал диалог с клиентом {client_id} ({client_name})")
+
+
+@dp.callback_query(F.data.startswith("refresh_window:"))
+async def handle_refresh_window(callback: types.CallbackQuery):
+    operator_id = callback.from_user.id
+    client_id = int(callback.data.split(":")[1])
+
+    new_text = format_dialog_window_text(client_id, operator_id)
+    window_kb = get_dialog_window_keyboard(client_id)
+
+    db.set_dialog_window_msg_id(operator_id, client_id, callback.message.message_id)
+
+    try:
+        await callback.message.edit_text(
+            text=new_text,
+            parse_mode="HTML",
+            reply_markup=window_kb
+        )
+        await callback.answer("🔄 Окно диалога обновлено!", show_alert=False)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            await callback.answer("🔄 Нет новых сообщений (окно актуально)", show_alert=False)
+        else:
+            await callback.answer("Окно актуально", show_alert=False)
+    except Exception:
+        await callback.answer("Окно актуально", show_alert=False)
+
+
+@dp.callback_query(F.data.startswith("show_survey:"))
+async def handle_show_survey(callback: types.CallbackQuery):
+    client_id = int(callback.data.split(":")[1])
+    user_info = db.get_user(client_id)
+    if not user_info:
+        await callback.answer("Данные анкеты не найдены", show_alert=True)
+        return
+
+    name = user_info.get("user_name") or f"Клиент {client_id}"
+    username = f"@{user_info.get('username')}" if user_info.get("username") else f"ID: {client_id}"
+    care = user_info.get("care_answer") or "Не указан"
+    analysis = user_info.get("analysis_text") or "Нет результатов"
+
+    text = (
+        f"📋 <b>АНКЕТА КЛИЕНТА: {html.escape(name)}</b> ({username})\n"
+        f"🆔 <code>{client_id}</code>\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧴 <b>Текущий уход (Вопрос 7):</b>\n• {html.escape(care)}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>РАЗБОР КОЖИ:</b>\n{analysis}"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Вернуться в диалоговое окно", callback_data=f"start_dialog:{client_id}")]
+    ])
+    await bot.send_message(
+        chat_id=callback.from_user.id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("close_dialog:"))
+async def handle_close_dialog_callback(callback: types.CallbackQuery):
+    operator_id = callback.from_user.id
+    client_id = int(callback.data.split(":")[1])
+
+    user_info = db.get_user(client_id)
+    cname = user_info.get("user_name") if user_info else "Клиент"
+
+    db.close_active_dialog_for_operator(operator_id, client_id)
+    try:
+        await bot.send_message(chat_id=client_id, text="Диалог закончен.")
+    except Exception:
+        pass
+
+    await callback.answer(f"Диалог с {cname} завершён")
+    try:
+        await callback.message.edit_text(f"❌ <b>Диалог с {html.escape(cname)} завершён.</b>", parse_mode="HTML")
+    except Exception:
+        pass
+
+    remaining = db.get_open_dialogs_for_operator(operator_id)
+    if remaining:
+        next_id = db.get_active_dialog_for_operator(operator_id)
+        next_info = db.get_user(next_id) if next_id else None
+        next_name = next_info.get("user_name") if next_info else "Клиент"
+        kb = get_operator_keyboard(operator_id)
+        await bot.send_message(
+            chat_id=operator_id,
+            text=f"🟢 Переключено на открытый диалог: <b>{html.escape(next_name)}</b>",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
+    else:
+        await bot.send_message(
+            chat_id=operator_id,
+            text="Все диалоги закрыты.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
+
+@dp.callback_query(F.data == "leave_chat_cb")
+async def handle_leave_chat_callback(callback: types.CallbackQuery):
+    operator_id = callback.from_user.id
+    focused_id = db.leave_current_chat(operator_id)
+    open_dialogs = db.get_open_dialogs_for_operator(operator_id)
+
+    name = "Клиент"
+    if focused_id:
+        user_info = db.get_user(focused_id)
+        if user_info:
+            name = user_info.get("user_name") or "Клиент"
+
+    await callback.answer(f"Чат с {name} сохранён!")
+
+    if open_dialogs:
+        buttons = []
+        text_lines = [f"💾 <b>Чат с {html.escape(name)} сохранён!</b> Диалог не закончен.\n", "📋 <b>Ваши открытые диалоги:</b>"]
+        for idx, d in enumerate(open_dialogs, start=1):
+            cid = d["client_id"]
+            cname = d.get("user_name") or f"Клиент {cid}"
+            cuser = f"@{d.get('username')}" if d.get('username') else f"ID: {cid}"
+            text_lines.append(f"{idx}. 💬 <b>{html.escape(cname)}</b> ({cuser})")
+            buttons.append([InlineKeyboardButton(text=f"🚪 Открыть окно: {cname[:15]}", callback_data=f"start_dialog:{cid}")])
+
+        buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
+        await bot.send_message(
+            chat_id=operator_id,
+            text="\n".join(text_lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+    else:
+        await bot.send_message(
+            chat_id=operator_id,
+            text="У вас нет активных диалогов.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
 
 
 # Просмотр списка открытых диалогов (комнат)
@@ -1241,12 +1394,8 @@ async def handle_show_dialogs_list(message: types.Message):
         status = "🟢 [ВЫ В ЭТОМ ЧАТЕ]" if is_foc else "💬"
         text_parts.append(f"{idx}. {status} <b>{html.escape(cname)}</b> ({cuser})")
 
-        row = []
-        if WEBAPP_URL:
-            row.append(InlineKeyboardButton(text=f"📱 Окно: {cname[:10]}", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={cid}")))
-        btn_label = f"🟢 В чате: {cname[:12]}" if is_foc else f"🚪 Войти в чат: {cname[:12]}"
-        row.append(InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{cid}"))
-        buttons.append(row)
+        btn_label = f"🟢 В окне: {cname[:12]}" if is_foc else f"🚪 Открыть окно: {cname[:12]}"
+        buttons.append([InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{cid}")])
 
     buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
 
@@ -1289,11 +1438,7 @@ async def handle_leave_chat(message: types.Message):
             cname = d.get("user_name") or f"Клиент {cid}"
             cuser = f"@{d.get('username')}" if d.get('username') else f"ID: {cid}"
             text_lines.append(f"{idx}. 💬 <b>{html.escape(cname)}</b> ({cuser})")
-            row = []
-            if WEBAPP_URL:
-                row.append(InlineKeyboardButton(text=f"📱 Окно: {cname[:10]}", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={cid}")))
-            row.append(InlineKeyboardButton(text=f"🚪 Войти в чат: {cname[:15]}", callback_data=f"start_dialog:{cid}"))
-            buttons.append(row)
+            buttons.append([InlineKeyboardButton(text=f"🚪 Открыть окно: {cname[:15]}", callback_data=f"start_dialog:{cid}")])
 
         buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
         await message.answer(
@@ -1426,14 +1571,28 @@ async def handle_private_message(message: types.Message, state: FSMContext):
                     text=op_text,
                     media_type=str(message.content_type or "text")
                 )
-                if is_reply:
-                    target_info = db.get_user(target_client_id)
-                    t_name = target_info.get("user_name") if target_info else "Клиент"
+                # Авто-обновление открытого диалогового окна на экране оператора
+                w_msg_id = db.get_dialog_window_msg_id(sender_id, target_client_id)
+                if w_msg_id:
                     try:
-                        confirm = await message.reply(f"✓ Доставлено: <b>{html.escape(t_name)}</b>", parse_mode="HTML")
-                        asyncio.create_task(_auto_delete_message(confirm, delay=3))
+                        new_win_text = format_dialog_window_text(target_client_id, sender_id)
+                        await bot.edit_message_text(
+                            chat_id=sender_id,
+                            message_id=w_msg_id,
+                            text=new_win_text,
+                            parse_mode="HTML",
+                            reply_markup=get_dialog_window_keyboard(target_client_id)
+                        )
                     except Exception:
                         pass
+
+                target_info = db.get_user(target_client_id)
+                t_name = target_info.get("user_name") if target_info else "Клиент"
+                try:
+                    confirm = await message.reply(f"✓ Доставлено: <b>{html.escape(t_name)}</b>", parse_mode="HTML")
+                    asyncio.create_task(_auto_delete_message(confirm, delay=3))
+                except Exception:
+                    pass
             except TelegramForbiddenError:
                 await message.answer("⚠️ Сообщение не доставлено: пользователь заблокировал бота.")
             except Exception as e:
@@ -1449,18 +1608,18 @@ async def handle_private_message(message: types.Message, state: FSMContext):
             open_dialogs = db.get_open_dialogs_for_operator(sender_id)
             if open_dialogs:
                 buttons = [
-                    [InlineKeyboardButton(text=f"🚪 Войти в чат: {d.get('user_name', 'Клиент')[:15]}", callback_data=f"start_dialog:{d['client_id']}")]
+                    [InlineKeyboardButton(text=f"🚪 Открыть окно: {d.get('user_name', 'Клиент')[:15]}", callback_data=f"start_dialog:{d['client_id']}")]
                     for d in open_dialogs
                 ]
                 await message.answer(
                     "Вы сейчас находитесь вне конкретного чата (диалоги сохранены).\n"
-                    "Выберите, в чей чат войти, или ответьте на сообщение через Reply:",
+                    "Выберите, чьё диалоговое окно открыть, или ответьте на сообщение через Reply:",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
                 )
             else:
                 await message.answer(
                     "У вас сейчас нет активного диалога.\n\n"
-                    "Нажмите кнопку «💬 Войти в диалог» под карточкой клиента или ответьте на его сообщение через Reply.",
+                    "Нажмите кнопку «💬 Открыть окно диалога» под карточкой клиента или ответьте на его сообщение через Reply.",
                     reply_markup=ReplyKeyboardRemove()
                 )
             return
@@ -1524,6 +1683,21 @@ async def handle_private_message(message: types.Message, state: FSMContext):
                 operator_id=active_operator_id,
                 client_id=client_id
             )
+
+            # 4. Авто-обновление диалогового окна на экране оператора
+            w_msg_id = db.get_dialog_window_msg_id(active_operator_id, client_id)
+            if w_msg_id:
+                try:
+                    new_win_text = format_dialog_window_text(client_id, active_operator_id)
+                    await bot.edit_message_text(
+                        chat_id=active_operator_id,
+                        message_id=w_msg_id,
+                        text=new_win_text,
+                        parse_mode="HTML",
+                        reply_markup=get_dialog_window_keyboard(client_id)
+                    )
+                except Exception:
+                    pass
         except Exception as e:
             logger.error(f"Не удалось доставить сообщение оператору {active_operator_id}: {e}")
 
