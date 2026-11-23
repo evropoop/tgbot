@@ -244,7 +244,7 @@ def set_active_dialog(operator_id: int, client_id: int):
 
 
 def get_active_dialog_for_operator(operator_id: int) -> Optional[int]:
-    """Возвращает client_id текущего сфокусированного диалога оператора."""
+    """Возвращает client_id текущего сфокусированного диалога оператора (если оператор внутри чата)."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -252,20 +252,17 @@ def get_active_dialog_for_operator(operator_id: int) -> Optional[int]:
             (operator_id,)
         )
         row = cursor.fetchone()
-        if not row:
-            # Если нет сфокусированного, берем любой последний открытый диалог
-            cursor.execute(
-                "SELECT client_id FROM active_dialogs WHERE operator_id = ? ORDER BY started_at DESC LIMIT 1",
-                (operator_id,)
-            )
-            row = cursor.fetchone()
-            if row:
-                cursor.execute(
-                    "UPDATE active_dialogs SET is_focused = 1 WHERE operator_id = ? AND client_id = ?",
-                    (operator_id, row["client_id"])
-                )
-                conn.commit()
         return row["client_id"] if row else None
+
+
+def leave_current_chat(operator_id: int) -> Optional[int]:
+    """Снимает фокус со всех диалогов оператора (выход из комнаты чата), сохраняя все диалоги открытыми."""
+    focused = get_active_dialog_for_operator(operator_id)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE active_dialogs SET is_focused = 0 WHERE operator_id = ?", (operator_id,))
+        conn.commit()
+    return focused
 
 
 def get_open_dialogs_for_operator(operator_id: int) -> List[Dict[str, Any]]:

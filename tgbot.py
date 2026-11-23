@@ -1059,25 +1059,28 @@ async def _expire_media_group(media_group_id: str):
 # ================== РЕЖИМ ЖИВОГО ДИАЛОГА (ПАРАЛЛЕЛЬНОЕ ОБЩЕНИЕ С КЛИЕНТАМИ) ==================
 
 def get_operator_keyboard(operator_id: int) -> Optional[ReplyKeyboardMarkup]:
-    """Генерирует нижнюю клавиатуру оператора с именем текущего клиента и счетчиком открытых диалогов."""
+    """Генерирует нижнюю клавиатуру оператора: выход из комнаты, завершение и список открытых чатов."""
     focused_id = db.get_active_dialog_for_operator(operator_id)
     open_dialogs = db.get_open_dialogs_for_operator(operator_id)
 
     if not open_dialogs:
         return None
 
+    count_str = f" ({len(open_dialogs)})" if len(open_dialogs) > 1 else ""
+
     if focused_id:
         user_info = db.get_user(focused_id)
         name = user_info.get("user_name") if user_info else "Клиент"
-        end_btn_text = f"❌ Закончить диалог ({name[:12]})"
+        keyboard = [
+            [KeyboardButton(text="⬅️ Выйти из чата (сохранить)")],
+            [KeyboardButton(text=f"❌ Завершить диалог ({name[:12]})")],
+            [KeyboardButton(text=f"👥 Мои открытые чаты{count_str}")]
+        ]
     else:
-        end_btn_text = "❌ Закончить диалог"
+        keyboard = [
+            [KeyboardButton(text=f"👥 Мои открытые чаты{count_str}")]
+        ]
 
-    count_str = f" ({len(open_dialogs)})" if len(open_dialogs) > 1 else ""
-    keyboard = [
-        [KeyboardButton(text=end_btn_text)],
-        [KeyboardButton(text=f"👥 Список диалогов{count_str}")]
-    ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, is_persistent=True)
 
 
@@ -1146,8 +1149,8 @@ async def handle_start_dialog(callback: types.CallbackQuery):
     logger.info(f"Оператор {operator_id} активировал диалог с клиентом {client_id} ({client_name})")
 
 
-# Просмотр списка активных диалогов (для параллельного ведения 5+ клиентов)
-@dp.message(F.chat.type == "private", F.text.regexp(r"^👥 Список диалогов.*$"))
+# Просмотр списка открытых диалогов (комнат)
+@dp.message(F.chat.type == "private", F.text.regexp(r"^👥 (Мои открытые чаты|Список диалогов).*$"))
 async def handle_show_dialogs_list(message: types.Message):
     if not is_operator(message.from_user.id):
         return
@@ -1162,7 +1165,7 @@ async def handle_show_dialogs_list(message: types.Message):
         )
         return
 
-    text_parts = ["👥 <b>Ваши активные диалоги:</b>\n"]
+    text_parts = ["👥 <b>Ваши открытые чаты:</b>\n"]
     buttons = []
 
     for idx, d in enumerate(open_dialogs, start=1):
@@ -1170,17 +1173,17 @@ async def handle_show_dialogs_list(message: types.Message):
         cname = d.get("user_name") or f"Клиент {cid}"
         cuser = f"@{d.get('username')}" if d.get('username') else f"ID: {cid}"
         is_foc = bool(d.get("is_focused"))
-        status = "🟢 [ТЕКУЩИЙ ФОКУС]" if is_foc else "💬"
+        status = "🟢 [ВЫ В ЭТОМ ЧАТЕ]" if is_foc else "💬"
         text_parts.append(f"{idx}. {status} <b>{html.escape(cname)}</b> ({cuser})")
 
-        btn_label = f"🟢 Пишете: {cname[:15]}" if is_foc else f"👉 Переключить на: {cname[:15]}"
+        btn_label = f"🟢 Вы в чате: {cname[:12]}" if is_foc else f"🚪 Войти в чат: {cname[:12]}"
         buttons.append([InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{cid}")])
 
     buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
 
     text_parts.append(
-        "\n<i>Нажмите на кнопку клиента, чтобы переключить фокус сообщений, "
-        "или просто делайте Reply (свайп влево) на сообщения любого клиента.</i>"
+        "\n<i>Нажмите «🚪 Войти в чат», чтобы открыть диалог с клиентом, "
+        "или просто делайте Reply (свайп влево) на его сообщения.</i>"
     )
 
     await message.answer(
@@ -1188,6 +1191,47 @@ async def handle_show_dialogs_list(message: types.Message):
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
+
+
+# Выход из комнаты чата с сохранением диалога
+@dp.message(F.chat.type == "private", F.text.regexp(r"^⬅️ Выйти из чата.*$"))
+async def handle_leave_chat(message: types.Message):
+    if not is_operator(message.from_user.id):
+        return
+
+    operator_id = message.from_user.id
+    focused_id = db.leave_current_chat(operator_id)
+    open_dialogs = db.get_open_dialogs_for_operator(operator_id)
+
+    if focused_id:
+        user_info = db.get_user(focused_id)
+        name = user_info.get("user_name") if user_info else "Клиент"
+        status_msg = f"💾 <b>Чат с {html.escape(name)} сохранён!</b> Диалог не закончен, вы вышли в список чатов."
+    else:
+        status_msg = "Вы находитесь вне активных чатов."
+
+    kb_reply = get_operator_keyboard(operator_id)
+
+    if open_dialogs:
+        buttons = []
+        text_lines = [status_msg, "\n📋 <b>Ваши открытые чаты:</b>"]
+        for idx, d in enumerate(open_dialogs, start=1):
+            cid = d["client_id"]
+            cname = d.get("user_name") or f"Клиент {cid}"
+            cuser = f"@{d.get('username')}" if d.get('username') else f"ID: {cid}"
+            text_lines.append(f"{idx}. 💬 <b>{html.escape(cname)}</b> ({cuser})")
+            buttons.append([InlineKeyboardButton(text=f"🚪 Войти в чат: {cname[:15]}", callback_data=f"start_dialog:{cid}")])
+
+        buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
+        await message.answer(
+            "\n".join(text_lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        if kb_reply:
+            await message.answer("Для входа нажмите кнопку выше или выберите чат в панели:", reply_markup=kb_reply)
+    else:
+        await message.answer(status_msg, reply_markup=ReplyKeyboardRemove())
 
 
 @dp.callback_query(F.data == "close_all_dialogs")
@@ -1226,10 +1270,18 @@ async def handle_private_message(message: types.Message, state: FSMContext):
     # -------------------------------------------------------------
     if is_operator(sender_id):
         # 1. Завершение диалога (кнопка в нижней панели)
-        if message.text and (message.text.strip().startswith("❌ Закончить диалог") or message.text.strip() == "Закончить диалог"):
+        if message.text and (
+            message.text.strip().startswith("❌ Завершить диалог")
+            or message.text.strip().startswith("❌ Закончить диалог")
+            or message.text.strip() in ["Закончить диалог", "Завершить диалог"]
+        ):
             focused_id = db.get_active_dialog_for_operator(sender_id)
             if not focused_id:
-                await message.answer("У вас нет активного диалога.", reply_markup=ReplyKeyboardRemove())
+                open_dialogs = db.get_open_dialogs_for_operator(sender_id)
+                if open_dialogs:
+                    await handle_show_dialogs_list(message)
+                else:
+                    await message.answer("У вас нет активного диалога.", reply_markup=ReplyKeyboardRemove())
                 return
 
             client_info = db.get_user(focused_id)
@@ -1250,14 +1302,14 @@ async def handle_private_message(message: types.Message, state: FSMContext):
                 next_name = next_info.get("user_name") if next_info else "Клиент"
                 kb = get_operator_keyboard(sender_id)
                 await message.answer(
-                    f"Диалог с <b>{html.escape(client_name)}</b> закончен.\n\n"
-                    f"🟢 Фокус автоматически переключен на: <b>{html.escape(next_name)}</b>.",
+                    f"Диалог с <b>{html.escape(client_name)}</b> завершён.\n\n"
+                    f"🟢 Вы автоматически переключены в чат с: <b>{html.escape(next_name)}</b>.",
                     parse_mode="HTML",
                     reply_markup=kb
                 )
             else:
                 await message.answer(
-                    f"Диалог с <b>{html.escape(client_name)}</b> закончен.\nВсе диалоги закрыты.",
+                    f"Диалог с <b>{html.escape(client_name)}</b> завершён.\nВсе диалоги закрыты.",
                     parse_mode="HTML",
                     reply_markup=ReplyKeyboardRemove()
                 )
@@ -1312,12 +1364,24 @@ async def handle_private_message(message: types.Message, state: FSMContext):
                     await message.answer(f"❌ Ошибка отправки клиенту: {e}")
             return
         else:
-            # У оператора нет активного диалога
-            await message.answer(
-                "У вас сейчас нет активного диалога.\n\n"
-                "Нажмите кнопку «💬 Начать диалог» под карточкой клиента или ответьте на его сообщение через Reply.",
-                reply_markup=ReplyKeyboardRemove()
-            )
+            # У оператора нет сфокусированного диалога в данный момент
+            open_dialogs = db.get_open_dialogs_for_operator(sender_id)
+            if open_dialogs:
+                buttons = [
+                    [InlineKeyboardButton(text=f"🚪 Войти в чат: {d.get('user_name', 'Клиент')[:15]}", callback_data=f"start_dialog:{d['client_id']}")]
+                    for d in open_dialogs
+                ]
+                await message.answer(
+                    "Вы сейчас находитесь вне конкретного чата (диалоги сохранены).\n"
+                    "Выберите, в чей чат войти, или ответьте на сообщение через Reply:",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+                )
+            else:
+                await message.answer(
+                    "У вас сейчас нет активного диалога.\n\n"
+                    "Нажмите кнопку «💬 Войти в диалог» под карточкой клиента или ответьте на его сообщение через Reply.",
+                    reply_markup=ReplyKeyboardRemove()
+                )
             return
 
     # -------------------------------------------------------------
