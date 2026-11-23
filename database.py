@@ -58,13 +58,29 @@ def init_db():
             )
         """)
 
-        # Таблица активных диалогов (Оператор <-> Клиент)
+        # Таблица активных диалогов (Оператор <-> Клиент, поддержка нескольких параллельных)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS active_dialogs (
-                operator_id INTEGER PRIMARY KEY,
-                client_id INTEGER UNIQUE,
-                started_at TEXT
+                operator_id INTEGER,
+                client_id INTEGER,
+                is_focused INTEGER DEFAULT 1,
+                started_at TEXT,
+                PRIMARY KEY (operator_id, client_id)
             )
+        """)
+
+        # Таблица маршрутизации сообщений для ответа через Reply (свайп)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS message_routing (
+                operator_msg_id INTEGER,
+                operator_id INTEGER,
+                client_id INTEGER,
+                created_at TEXT,
+                PRIMARY KEY (operator_msg_id, operator_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_routing_client ON message_routing(client_id)
         """)
         conn.commit()
     logger.info("База данных tgbot.db инициализирована.")
@@ -179,47 +195,158 @@ def set_setting(key: str, value: str):
         conn.commit()
 
 
-# ================== АКТИВНЫЕ ДИАЛОГИ ==================
-def set_active_dialog(operator_id: int, client_id: int):
+# ================== АКТИВНЫЕ ДИАЛОГИ И МАРШРУТИЗАЦИЯ ==================
+
+def save_message_routing(operator_msg_id: int, operator_id: int, client_id: int):
+    """Сохраняет соответствие сообщения у оператора и ID клиента (для ответа через Reply)."""
     now = datetime.now().isoformat()
     with get_connection() as conn:
         cursor = conn.cursor()
-        # Очищаем предыдущие диалоги оператора и клиента
-        cursor.execute("DELETE FROM active_dialogs WHERE operator_id = ? OR client_id = ?", (operator_id, client_id))
         cursor.execute("""
-            INSERT INTO active_dialogs (operator_id, client_id, started_at)
-            VALUES (?, ?, ?)
+            INSERT OR REPLACE INTO message_routing (operator_msg_id, operator_id, client_id, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (operator_msg_id, operator_id, client_id, now))
+        conn.commit()
+
+
+def get_client_by_operator_msg_id(operator_msg_id: int, operator_id: Optional[int] = None) -> Optional[int]:
+    """Находит client_id по ID сообщения в чате оператора."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if operator_id:
+            cursor.execute(
+                "SELECT client_id FROM message_routing WHERE operator_msg_id = ? AND operator_id = ?",
+                (operator_msg_id, operator_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT client_id FROM message_routing WHERE operator_msg_id = ?",
+                (operator_msg_id,)
+            )
+        row = cursor.fetchone()
+        return row["client_id"] if row else None
+
+
+def set_active_dialog(operator_id: int, client_id: int):
+    """Активирует диалог с клиентом и переключает фокус оператора на него."""
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Снимаем фокус с других диалогов этого оператора
+        cursor.execute("UPDATE active_dialogs SET is_focused = 0 WHERE operator_id = ?", (operator_id,))
+        # Добавляем или обновляем диалог с данным клиентом как сфокусированный
+        cursor.execute("""
+            INSERT INTO active_dialogs (operator_id, client_id, is_focused, started_at)
+            VALUES (?, ?, 1, ?)
+            ON CONFLICT(operator_id, client_id) DO UPDATE SET is_focused = 1
         """, (operator_id, client_id, now))
         conn.commit()
 
 
 def get_active_dialog_for_operator(operator_id: int) -> Optional[int]:
+    """Возвращает client_id текущего сфокусированного диалога оператора."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT client_id FROM active_dialogs WHERE operator_id = ?", (operator_id,))
+        cursor.execute(
+            "SELECT client_id FROM active_dialogs WHERE operator_id = ? AND is_focused = 1",
+            (operator_id,)
+        )
         row = cursor.fetchone()
+        if not row:
+            # Если нет сфокусированного, берем любой последний открытый диалог
+            cursor.execute(
+                "SELECT client_id FROM active_dialogs WHERE operator_id = ? ORDER BY started_at DESC LIMIT 1",
+                (operator_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                cursor.execute(
+                    "UPDATE active_dialogs SET is_focused = 1 WHERE operator_id = ? AND client_id = ?",
+                    (operator_id, row["client_id"])
+                )
+                conn.commit()
         return row["client_id"] if row else None
 
 
-def get_active_dialog_for_client(client_id: int) -> Optional[int]:
+def get_open_dialogs_for_operator(operator_id: int) -> List[Dict[str, Any]]:
+    """Возвращает список всех открытых диалогов оператора."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT operator_id FROM active_dialogs WHERE client_id = ?", (client_id,))
+        cursor.execute("""
+            SELECT a.client_id, a.is_focused, a.started_at, u.user_name, u.username
+            FROM active_dialogs a
+            LEFT JOIN users u ON a.client_id = u.user_id
+            WHERE a.operator_id = ?
+            ORDER BY a.is_focused DESC, a.started_at DESC
+        """, (operator_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_active_dialog_for_client(client_id: int) -> Optional[int]:
+    """Возвращает operator_id, с которым открыт диалог у клиента."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT operator_id FROM active_dialogs WHERE client_id = ? ORDER BY is_focused DESC LIMIT 1",
+            (client_id,)
+        )
         row = cursor.fetchone()
         return row["operator_id"] if row else None
 
 
-def close_active_dialog_for_operator(operator_id: int) -> Optional[int]:
-    client_id = get_active_dialog_for_operator(operator_id)
-    if client_id:
-        with get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM active_dialogs WHERE operator_id = ?", (operator_id,))
+def switch_operator_focus(operator_id: int, client_id: int):
+    """Переключает фокус оператора на указанного клиента."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE active_dialogs SET is_focused = 0 WHERE operator_id = ?", (operator_id,))
+        cursor.execute(
+            "UPDATE active_dialogs SET is_focused = 1 WHERE operator_id = ? AND client_id = ?",
+            (operator_id, client_id)
+        )
+        conn.commit()
+
+
+def close_active_dialog_for_operator(operator_id: int, client_id: Optional[int] = None) -> Optional[int]:
+    """Закрывает диалог с указанным клиентом (или текущим сфокусированным) и возвращает client_id."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if not client_id:
+            client_id = get_active_dialog_for_operator(operator_id)
+
+        if client_id:
+            cursor.execute(
+                "DELETE FROM active_dialogs WHERE operator_id = ? AND client_id = ?",
+                (operator_id, client_id)
+            )
+            # Переключаем фокус на следующий оставшийся диалог, если он есть
+            cursor.execute(
+                "SELECT client_id FROM active_dialogs WHERE operator_id = ? ORDER BY started_at DESC LIMIT 1",
+                (operator_id,)
+            )
+            next_row = cursor.fetchone()
+            if next_row:
+                cursor.execute(
+                    "UPDATE active_dialogs SET is_focused = 1 WHERE operator_id = ? AND client_id = ?",
+                    (operator_id, next_row["client_id"])
+                )
             conn.commit()
-    return client_id
+            return client_id
+    return None
+
+
+def close_all_dialogs_for_operator(operator_id: int) -> List[int]:
+    """Закрывает все открытые диалоги оператора и возвращает список client_id."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT client_id FROM active_dialogs WHERE operator_id = ?", (operator_id,))
+        clients = [row["client_id"] for row in cursor.fetchall()]
+        cursor.execute("DELETE FROM active_dialogs WHERE operator_id = ?", (operator_id,))
+        conn.commit()
+        return clients
 
 
 def close_active_dialog_for_client(client_id: int) -> Optional[int]:
+    """Закрывает диалог со стороны клиента."""
     operator_id = get_active_dialog_for_client(client_id)
     if operator_id:
         with get_connection() as conn:
