@@ -116,26 +116,43 @@ def format_dialog_window_text(client_id: int, operator_id: int) -> str:
 
 def get_dialog_window_keyboard(client_id: int) -> InlineKeyboardMarkup:
     """Инлайн-кнопки управления диалоговым окном внутри бота."""
-    buttons = [
-        [
-            InlineKeyboardButton(text="🔄 Обновить окно", callback_data=f"refresh_window:{client_id}"),
-            InlineKeyboardButton(text="📋 Анкета клиента", callback_data=f"show_survey:{client_id}")
-        ],
-        [
-            InlineKeyboardButton(text="⬅️ Выйти из окна (сохранить)", callback_data="leave_chat_cb"),
-            InlineKeyboardButton(text="❌ Завершить диалог", callback_data=f"close_dialog:{client_id}")
-        ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    client_info = db.get_user(client_id)
+    cname = client_info.get("user_name", "Клиент") if client_info else "Клиент"
+
+    rows = []
+    if WEBAPP_URL:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"📱 Открыть всплывающее окно: {cname[:12]}",
+                web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={client_id}")
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(text="🔄 Обновить окно", callback_data=f"refresh_window:{client_id}"),
+        InlineKeyboardButton(text="📋 Анкета клиента", callback_data=f"show_survey:{client_id}")
+    ])
+    rows.append([
+        InlineKeyboardButton(text="⬅️ Выйти из окна (сохранить)", callback_data="leave_chat_cb"),
+        InlineKeyboardButton(text="❌ Завершить диалог", callback_data=f"close_dialog:{client_id}")
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_dialog_inline_keyboard(client_id: int, is_active: bool = False) -> InlineKeyboardMarkup:
-    """Генерирует инлайн-кнопку открытия диалогового окна клиента."""
+    """Генерирует инлайн-кнопки для карточки клиента или диалога (включая Web App при наличии WEBAPP_URL)."""
     buttons = []
     client_info = db.get_user(client_id)
     cname = client_info.get("user_name", "Клиент") if client_info else "Клиент"
 
-    btn_label = f"🟢 В ДИАЛОГЕ: {cname[:12]}" if is_active else f"💬 Открыть окно диалога: {cname[:12]}"
+    if WEBAPP_URL:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"📱 Открыть окно чата: {cname[:12]}",
+                web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={client_id}")
+            )
+        ])
+
+    btn_label = f"🟢 В ДИАЛОГЕ: {cname[:12]}" if is_active else f"💬 Открыть в чате: {cname[:12]}"
     buttons.append([
         InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{client_id}")
     ])
@@ -1349,7 +1366,11 @@ async def handle_leave_chat_callback(callback: types.CallbackQuery):
             cname = d.get("user_name") or f"Клиент {cid}"
             cuser = f"@{d.get('username')}" if d.get('username') else f"ID: {cid}"
             text_lines.append(f"{idx}. 💬 <b>{html.escape(cname)}</b> ({cuser})")
-            buttons.append([InlineKeyboardButton(text=f"🚪 Открыть окно: {cname[:15]}", callback_data=f"start_dialog:{cid}")])
+            row = []
+            if WEBAPP_URL:
+                row.append(InlineKeyboardButton(text=f"📱 Окно: {cname[:10]}", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={cid}")))
+            row.append(InlineKeyboardButton(text=f"🚪 Открыть: {cname[:15]}", callback_data=f"start_dialog:{cid}"))
+            buttons.append(row)
 
         buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
         await bot.send_message(
@@ -1394,8 +1415,12 @@ async def handle_show_dialogs_list(message: types.Message):
         status = "🟢 [ВЫ В ЭТОМ ЧАТЕ]" if is_foc else "💬"
         text_parts.append(f"{idx}. {status} <b>{html.escape(cname)}</b> ({cuser})")
 
-        btn_label = f"🟢 В окне: {cname[:12]}" if is_foc else f"🚪 Открыть окно: {cname[:12]}"
-        buttons.append([InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{cid}")])
+        row = []
+        if WEBAPP_URL:
+            row.append(InlineKeyboardButton(text=f"📱 Окно: {cname[:10]}", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={cid}")))
+        btn_label = f"🟢 В окне: {cname[:12]}" if is_foc else f"🚪 Открыть: {cname[:12]}"
+        row.append(InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{cid}"))
+        buttons.append(row)
 
     buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
 
@@ -1438,7 +1463,11 @@ async def handle_leave_chat(message: types.Message):
             cname = d.get("user_name") or f"Клиент {cid}"
             cuser = f"@{d.get('username')}" if d.get('username') else f"ID: {cid}"
             text_lines.append(f"{idx}. 💬 <b>{html.escape(cname)}</b> ({cuser})")
-            buttons.append([InlineKeyboardButton(text=f"🚪 Открыть окно: {cname[:15]}", callback_data=f"start_dialog:{cid}")])
+            row = []
+            if WEBAPP_URL:
+                row.append(InlineKeyboardButton(text=f"📱 Окно: {cname[:10]}", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={cid}")))
+            row.append(InlineKeyboardButton(text=f"🚪 Открыть: {cname[:15]}", callback_data=f"start_dialog:{cid}"))
+            buttons.append(row)
 
         buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
         await message.answer(
