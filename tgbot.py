@@ -26,6 +26,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest, TelegramAPIError
 
 import database as db
+from webapp_server import WebAppServer
 
 # ================== ЗАГРУЗКА .ENV (ЕСЛИ ЕСТЬ) ==================
 def _load_env_file():
@@ -68,8 +69,34 @@ else:
 
 IMAGE_URL = "https://pbt.storage.yandexcloud.net/cp_upload/3226d6315635f4e60bebd98a6421ea7a_full.jpeg"
 
+# Адрес и порт для встроенного веб-приложения (Telegram Mini App)
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip().rstrip("/")
+WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))
+
 # Хранилище игнорируемых media_group_id для заметок оператора (#...)
 IGNORED_MEDIA_GROUPS: Set[str] = set()
+
+
+def get_dialog_inline_keyboard(client_id: int, is_active: bool = False) -> InlineKeyboardMarkup:
+    """Генерирует инлайн-кнопки для карточки клиента или диалога (включая Web App при наличии WEBAPP_URL)."""
+    buttons = []
+    client_info = db.get_user(client_id)
+    cname = client_info.get("user_name", "Клиент") if client_info else "Клиент"
+
+    if WEBAPP_URL:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"📱 Открыть окно чата: {cname[:12]}",
+                web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={client_id}")
+            )
+        ])
+
+    btn_label = f"🟢 В ДИАЛОГЕ: {cname[:12]}" if is_active else "💬 Войти в чат"
+    buttons.append([
+        InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{client_id}")
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 
 def get_operator_chat_id() -> Optional[int]:
@@ -407,9 +434,7 @@ async def send_client_card(
     )
     parts = split_message_text(card_text, 4000)
 
-    kb_dialog = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💬 Начать диалог", callback_data=f"start_dialog:{user_id}")]
-    ])
+    kb_dialog = get_dialog_inline_keyboard(user_id)
 
     # 1. Всегда отправляем в ЛС операторам (включая ID 7875791813) с кнопкой «💬 Начать диалог»
     for oid in get_target_operators():
@@ -1026,6 +1051,14 @@ async def handle_operator_chat_message(message: types.Message):
             from_chat_id=message.chat.id,
             message_id=message.message_id
         )
+        op_text = message.text or message.caption or (f"[{message.content_type}]" if message.content_type else "Сообщение")
+        db.save_chat_message(
+            client_id=user_id,
+            sender_type="operator",
+            sender_id=message.from_user.id,
+            text=op_text,
+            media_type=str(message.content_type or "text")
+        )
     except TelegramForbiddenError:
         logger.warning(f"Клиент {user_id} заблокировал бота")
         await bot.send_message(
@@ -1111,23 +1144,37 @@ async def handle_start_dialog(callback: types.CallbackQuery):
     # 3. Характерное изменение кнопки на самой карточке (кнопка становится «🟢 В ДИАЛОГЕ»)
     # Текст карточки клиента не удаляется!
     try:
-        active_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"🟢 В ДИАЛОГЕ: {client_name[:15]}", callback_data=f"start_dialog:{client_id}")]
-        ])
+        active_kb = get_dialog_inline_keyboard(client_id, is_active=True)
         await callback.message.edit_reply_markup(reply_markup=active_kb)
     except Exception as e:
         logger.warning(f"Не удалось обновить статус на карточке: {e}")
 
-    # 4. Характерный визуальный баннер активации в чат оператора
+    # 4. Подтягиваем историю сообщений клиента
+    history = db.get_chat_history(client_id, limit=10)
+    if history:
+        history_lines = []
+        for m in history:
+            time_str = m.get("created_at", "").split(" ")[-1] if m.get("created_at") else ""
+            prefix = f"👤 <b>{html.escape(client_name)}</b>" if m["sender_type"] == "client" else "👩‍⚕️ <b>Вы</b>"
+            time_label = f" <i>({time_str})</i>" if time_str else ""
+            txt = html.escape(m.get("text", "")[:300])
+            history_lines.append(f"{prefix}{time_label}:\n«{txt}»")
+        history_block = "\n\n".join(history_lines)
+    else:
+        history_block = "<i>(Предыдущих сообщений в переписке пока нет)</i>"
+
+    # 5. Характерный визуальный баннер активации с историей в чат оператора
     banner_text = (
         "🟢 ━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💬 <b>ДИАЛОГ АКТИВИРОВАН: {html.escape(client_name)}</b>\n"
+        f"💬 <b>ВХОД В ДИАЛОГ: {html.escape(client_name)}</b>\n"
         f"👤 <b>Клиент:</b> {html.escape(client_name)} ({username_display})\n"
         f"🆔 <code>{client_id}</code>\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📜 <b>ПОСЛЕДНИЕ СООБЩЕНИЯ ДИАЛОГА:</b>\n\n"
+        f"{history_block}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━ 🟢\n"
-        "Все ваши обычные сообщения теперь отправляются этому клиенту.\n\n"
-        "💡 <i>Для параллельного общения с другими клиентами просто <b>отвечайте (Reply)</b> "
-        "на их сообщения — бот сам доставит ответ нужному человеку!</i>"
+        "✍️ <i>Все ваши обычные сообщения теперь отправляются этому клиенту.\n"
+        "Для выхода из чата нажмите «⬅️ Выйти из чата (сохранить)» в нижней панели.</i>"
     )
     kb_end = get_operator_keyboard(operator_id)
     await bot.send_message(
@@ -1136,6 +1183,24 @@ async def handle_start_dialog(callback: types.CallbackQuery):
         parse_mode="HTML",
         reply_markup=kb_end
     )
+
+    # Если настроен WEBAPP_URL, предлагаем кнопку открытия отдельного окна
+    if WEBAPP_URL:
+        try:
+            app_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=f"📱 Открыть диалоговое окно: {client_name[:12]}",
+                    web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={client_id}")
+                )]
+            ])
+            await bot.send_message(
+                chat_id=operator_id,
+                text="📱 <i>Или откройте диалоговое окно приложения прямо в Telegram:</i>",
+                parse_mode="HTML",
+                reply_markup=app_kb
+            )
+        except Exception:
+            pass
 
     # 5. Уведомление клиенту
     try:
@@ -1176,8 +1241,12 @@ async def handle_show_dialogs_list(message: types.Message):
         status = "🟢 [ВЫ В ЭТОМ ЧАТЕ]" if is_foc else "💬"
         text_parts.append(f"{idx}. {status} <b>{html.escape(cname)}</b> ({cuser})")
 
-        btn_label = f"🟢 Вы в чате: {cname[:12]}" if is_foc else f"🚪 Войти в чат: {cname[:12]}"
-        buttons.append([InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{cid}")])
+        row = []
+        if WEBAPP_URL:
+            row.append(InlineKeyboardButton(text=f"📱 Окно: {cname[:10]}", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={cid}")))
+        btn_label = f"🟢 В чате: {cname[:12]}" if is_foc else f"🚪 Войти в чат: {cname[:12]}"
+        row.append(InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{cid}"))
+        buttons.append(row)
 
     buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
 
@@ -1220,7 +1289,11 @@ async def handle_leave_chat(message: types.Message):
             cname = d.get("user_name") or f"Клиент {cid}"
             cuser = f"@{d.get('username')}" if d.get('username') else f"ID: {cid}"
             text_lines.append(f"{idx}. 💬 <b>{html.escape(cname)}</b> ({cuser})")
-            buttons.append([InlineKeyboardButton(text=f"🚪 Войти в чат: {cname[:15]}", callback_data=f"start_dialog:{cid}")])
+            row = []
+            if WEBAPP_URL:
+                row.append(InlineKeyboardButton(text=f"📱 Окно: {cname[:10]}", web_app=types.WebAppInfo(url=f"{WEBAPP_URL}/chat?client_id={cid}")))
+            row.append(InlineKeyboardButton(text=f"🚪 Войти в чат: {cname[:15]}", callback_data=f"start_dialog:{cid}"))
+            buttons.append(row)
 
         buttons.append([InlineKeyboardButton(text="❌ Завершить все открытые диалоги", callback_data="close_all_dialogs")])
         await message.answer(
@@ -1345,6 +1418,14 @@ async def handle_private_message(message: types.Message, state: FSMContext):
                     from_chat_id=message.chat.id,
                     message_id=message.message_id
                 )
+                op_text = message.text or message.caption or (f"[{message.content_type}]" if message.content_type else "Сообщение")
+                db.save_chat_message(
+                    client_id=target_client_id,
+                    sender_type="operator",
+                    sender_id=sender_id,
+                    text=op_text,
+                    media_type=str(message.content_type or "text")
+                )
                 if is_reply:
                     target_info = db.get_user(target_client_id)
                     t_name = target_info.get("user_name") if target_info else "Клиент"
@@ -1400,15 +1481,22 @@ async def handle_private_message(message: types.Message, state: FSMContext):
     client_name = user_info.get("user_name") if user_info else (message.from_user.first_name or "Клиент")
     username_display = f"@{message.from_user.username}" if message.from_user.username else f"ID: {client_id}"
 
+    # Сохраняем сообщение клиента в историю переписки
+    c_text = message.text or message.caption or (f"[{message.content_type}]" if message.content_type else "Сообщение")
+    db.save_chat_message(
+        client_id=client_id,
+        sender_type="client",
+        sender_id=client_id,
+        text=c_text,
+        media_type=str(message.content_type or "text")
+    )
+
     # Проверяем, есть ли активный диалог с оператором
     active_operator_id = db.get_active_dialog_for_client(client_id)
     if active_operator_id:
         # Кнопка под сообщением для быстрого переключения фокуса оператора
         focused_now = db.get_active_dialog_for_operator(active_operator_id)
-        btn_label = f"🟢 Текущий фокус: {client_name[:15]}" if focused_now == client_id else f"💬 Ответить {client_name[:15]}"
-        kb_reply = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=btn_label, callback_data=f"start_dialog:{client_id}")]
-        ])
+        kb_reply = get_dialog_inline_keyboard(client_id, is_active=(focused_now == client_id))
 
         try:
             # 1. Заголовок с именем клиента
@@ -1456,9 +1544,7 @@ async def handle_private_message(message: types.Message, state: FSMContext):
     # Диалог сейчас НЕ активен, но клиент отправил сообщение после прохождения анкеты
     await message.answer("Ваше сообщение получено. Скоро я отвечу вам прямо сюда.")
 
-    kb_dialog = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💬 Начать диалог", callback_data=f"start_dialog:{client_id}")]
-    ])
+    kb_dialog = get_dialog_inline_keyboard(client_id)
 
     for oid in get_target_operators():
         try:
@@ -1516,7 +1602,15 @@ async def main():
         logger.info(f"Операторский чат топиков: {op_chat_id}")
     else:
         logger.warning("⚠️ Внимание: OPERATOR_CHAT_ID не настроен! Установите его в .env или командой /set_group в группе.")
-    await dp.start_polling(bot)
+
+    # Запуск встроенного веб-сервера для Telegram Mini App (Web App)
+    webapp_server = WebAppServer(bot=bot, port=WEBAPP_PORT)
+    await webapp_server.start()
+
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await webapp_server.stop()
 
 
 if __name__ == "__main__":

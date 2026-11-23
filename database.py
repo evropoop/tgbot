@@ -16,10 +16,28 @@ logger = logging.getLogger(__name__)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tgbot.db")
 
 
-def get_connection() -> sqlite3.Connection:
+class ClosingConnection:
+    """Обертка над соединением sqlite3 с автоматическим закрытием (close) при выходе из with."""
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def __enter__(self) -> sqlite3.Connection:
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is None:
+                self.conn.commit()
+            else:
+                self.conn.rollback()
+        finally:
+            self.conn.close()
+
+
+def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    return ClosingConnection(conn)
 
 
 def init_db():
@@ -81,6 +99,22 @@ def init_db():
         """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_routing_client ON message_routing(client_id)
+        """)
+
+        # Таблица истории сообщений каждого диалога
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id INTEGER,
+                sender_type TEXT,
+                sender_id INTEGER,
+                text TEXT,
+                media_type TEXT DEFAULT 'text',
+                created_at TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_history_client ON chat_history(client_id)
         """)
         conn.commit()
     logger.info("База данных tgbot.db инициализирована.")
@@ -351,3 +385,40 @@ def close_active_dialog_for_client(client_id: int) -> Optional[int]:
             cursor.execute("DELETE FROM active_dialogs WHERE client_id = ?", (client_id,))
             conn.commit()
     return operator_id
+
+
+# ================== ИСТОРИЯ ЧАТА ==================
+
+def save_chat_message(
+    client_id: int,
+    sender_type: str,
+    sender_id: int,
+    text: str,
+    media_type: str = "text"
+):
+    """Сохраняет сообщение в историю переписки с клиентом."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO chat_history (client_id, sender_type, sender_id, text, media_type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (client_id, sender_type, sender_id, text, media_type, now))
+        conn.commit()
+
+
+def get_chat_history(client_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+    """Возвращает последние сообщения переписки с клиентом в хронологическом порядке."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM (
+                SELECT id, client_id, sender_type, sender_id, text, media_type, created_at
+                FROM chat_history
+                WHERE client_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            ) ORDER BY id ASC
+        """, (client_id, limit))
+        return [dict(row) for row in cursor.fetchall()]
+
