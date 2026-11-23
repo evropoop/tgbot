@@ -57,6 +57,15 @@ def init_db():
                 value TEXT
             )
         """)
+
+        # Таблица активных диалогов (Оператор <-> Клиент)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS active_dialogs (
+                operator_id INTEGER PRIMARY KEY,
+                client_id INTEGER UNIQUE,
+                started_at TEXT
+            )
+        """)
         conn.commit()
     logger.info("База данных tgbot.db инициализирована.")
 
@@ -168,3 +177,53 @@ def set_setting(key: str, value: str):
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
         """, (key, str(value)))
         conn.commit()
+
+
+# ================== АКТИВНЫЕ ДИАЛОГИ ==================
+def set_active_dialog(operator_id: int, client_id: int):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Очищаем предыдущие диалоги оператора и клиента
+        cursor.execute("DELETE FROM active_dialogs WHERE operator_id = ? OR client_id = ?", (operator_id, client_id))
+        cursor.execute("""
+            INSERT INTO active_dialogs (operator_id, client_id, started_at)
+            VALUES (?, ?, ?)
+        """, (operator_id, client_id, now))
+        conn.commit()
+
+
+def get_active_dialog_for_operator(operator_id: int) -> Optional[int]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT client_id FROM active_dialogs WHERE operator_id = ?", (operator_id,))
+        row = cursor.fetchone()
+        return row["client_id"] if row else None
+
+
+def get_active_dialog_for_client(client_id: int) -> Optional[int]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT operator_id FROM active_dialogs WHERE client_id = ?", (client_id,))
+        row = cursor.fetchone()
+        return row["operator_id"] if row else None
+
+
+def close_active_dialog_for_operator(operator_id: int) -> Optional[int]:
+    client_id = get_active_dialog_for_operator(operator_id)
+    if client_id:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM active_dialogs WHERE operator_id = ?", (operator_id,))
+            conn.commit()
+    return client_id
+
+
+def close_active_dialog_for_client(client_id: int) -> Optional[int]:
+    operator_id = get_active_dialog_for_client(client_id)
+    if operator_id:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM active_dialogs WHERE client_id = ?", (client_id,))
+            conn.commit()
+    return operator_id

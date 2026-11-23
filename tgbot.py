@@ -375,7 +375,19 @@ async def ensure_operator_topic(
         return None
 
 
-async def send_client_card_to_topic(
+def get_target_operators() -> Set[int]:
+    """Возвращает список ID операторов, включая 7875791813 и OWNER_IDS."""
+    ops = set(OWNER_IDS)
+    ops.add(7875791813)
+    return ops
+
+
+def is_operator(user_id: int) -> bool:
+    """Проверяет, является ли пользователь оператором/администратором."""
+    return user_id in get_target_operators()
+
+
+async def send_client_card(
     user_id: int,
     user_name: str,
     username: Optional[str],
@@ -385,57 +397,69 @@ async def send_client_card_to_topic(
     allergy_note: Optional[str],
     analysis_text: str
 ):
-    """Отправляет карточку клиента в топик оператора и закрепляет ее."""
-    op_chat_id = get_operator_chat_id()
-    if not op_chat_id:
-        logger.warning("OPERATOR_CHAT_ID не настроен. Отправка карточки в ЛС владельцам.")
-        card_text = format_client_card(
-            user_id, user_name, username, care_answer,
-            answers, medical_note, allergy_note, analysis_text
-        )
-        parts = split_message_text(card_text, 4000)
-        for oid in OWNER_IDS:
-            for p in parts:
-                try:
-                    await bot.send_message(chat_id=oid, text=p, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"Не удалось отправить владельцу {oid}: {e}")
-        return
-
-    thread_id = await ensure_operator_topic(user_id, user_name, username)
-    if not thread_id:
-        logger.error(f"Не удалось получить thread_id для пользователя {user_id}")
-        return
-
+    """
+    Отправляет карточку клиента в ЛС операторам (включая 7875791813) с кнопкой «💬 Начать диалог»,
+    а также дублирует в супергруппу с топиками (если настроена).
+    """
     card_text = format_client_card(
         user_id, user_name, username, care_answer,
         answers, medical_note, allergy_note, analysis_text
     )
     parts = split_message_text(card_text, 4000)
 
-    try:
-        first_msg = await bot.send_message(
-            chat_id=op_chat_id,
-            message_thread_id=thread_id,
-            text=parts[0],
-            parse_mode="HTML"
-        )
-        for p in parts[1:]:
-            await bot.send_message(
-                chat_id=op_chat_id,
-                message_thread_id=thread_id,
-                text=p,
-                parse_mode="HTML"
-            )
+    kb_dialog = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Начать диалог", callback_data=f"start_dialog:{user_id}")]
+    ])
+
+    # 1. Всегда отправляем в ЛС операторам (включая ID 7875791813) с кнопкой «💬 Начать диалог»
+    for oid in get_target_operators():
         try:
-            await bot.pin_chat_message(
-                chat_id=op_chat_id,
-                message_id=first_msg.message_id
-            )
-        except Exception as pe:
-            logger.warning(f"Не удалось закрепить сообщение в топике: {pe}")
-    except Exception as e:
-        logger.error(f"Ошибка при отправке карточки в топик {thread_id}: {e}")
+            for idx, p in enumerate(parts):
+                markup = kb_dialog if idx == len(parts) - 1 else None
+                await bot.send_message(
+                    chat_id=oid,
+                    text=p,
+                    parse_mode="HTML",
+                    reply_markup=markup
+                )
+            logger.info(f"Карточка клиента {user_id} отправлена оператору {oid}")
+        except Exception as e:
+            logger.error(f"Не удалось отправить карточку оператору {oid}: {e}")
+
+    # 2. Если настроена супергруппа топиков — отправляем и закрепляем в топике
+    op_chat_id = get_operator_chat_id()
+    if op_chat_id:
+        try:
+            thread_id = await ensure_operator_topic(user_id, user_name, username)
+            if thread_id:
+                first_msg = await bot.send_message(
+                    chat_id=op_chat_id,
+                    message_thread_id=thread_id,
+                    text=parts[0],
+                    parse_mode="HTML"
+                )
+                for idx, p in enumerate(parts[1:], start=1):
+                    markup = kb_dialog if idx == len(parts) - 1 else None
+                    await bot.send_message(
+                        chat_id=op_chat_id,
+                        message_thread_id=thread_id,
+                        text=p,
+                        parse_mode="HTML",
+                        reply_markup=markup
+                    )
+                try:
+                    await bot.pin_chat_message(
+                        chat_id=op_chat_id,
+                        message_id=first_msg.message_id
+                    )
+                except Exception as pe:
+                    logger.warning(f"Не удалось закрепить сообщение в топике: {pe}")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке карточки в топик супергруппы: {e}")
+
+
+# Алиас для обратной совместимости
+send_client_card_to_topic = send_client_card
 
 
 # ================== ОБРАБОТЧИКИ /START И ПРИВЕТСТВИЯ ==================
@@ -1032,52 +1056,188 @@ async def _expire_media_group(media_group_id: str):
     IGNORED_MEDIA_GROUPS.discard(media_group_id)
 
 
-# 2. От клиента оператору (сообщения в ЛС боту после завершения анкеты)
+# ================== РЕЖИМ ЖИВОГО ДИАЛОГА (ЛС ОПЕРАТОРА И КЛИЕНТА) ==================
+
+@dp.callback_query(F.data.startswith("start_dialog:"))
+async def handle_start_dialog(callback: types.CallbackQuery):
+    operator_id = callback.from_user.id
+    client_id = int(callback.data.split(":")[1])
+
+    # 1. Отвечаем на callback (карточка клиента НЕ удаляется)
+    await callback.answer()
+
+    # 2. Фиксируем активный диалог в БД
+    db.set_active_dialog(operator_id, client_id)
+
+    # 3. Перманентная нижняя кнопка «❌ Закончить диалог»
+    kb_end = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="❌ Закончить диалог")]],
+        resize_keyboard=True,
+        is_persistent=True
+    )
+
+    # 4. Отправляем подтверждение оператору
+    await bot.send_message(
+        chat_id=operator_id,
+        text="Можете приступать к диалогу.",
+        reply_markup=kb_end
+    )
+    logger.info(f"Оператор {operator_id} начал диалог с клиентом {client_id}")
+
+
+# Обработка личных сообщений (ЛС с ботом)
 @dp.message(F.chat.type == "private")
-async def handle_client_private_message(message: types.Message, state: FSMContext):
+async def handle_private_message(message: types.Message, state: FSMContext):
+    # Если пользователь находится в процессе прохождения анкеты — не перехватываем
     current_state = await state.get_state()
     if current_state is not None:
         return
 
-    user_id = message.from_user.id
+    sender_id = message.from_user.id
 
-    if not db.is_survey_completed(user_id):
+    # -------------------------------------------------------------
+    # ВЕТКА ОПЕРАТОРА (7875791813 и OWNER_IDS)
+    # -------------------------------------------------------------
+    if is_operator(sender_id):
+        # 1. Нажатие кнопки «❌ Закончить диалог»
+        if message.text and message.text.strip() in ["❌ Закончить диалог", "Закончить диалог"]:
+            client_id = db.close_active_dialog_for_operator(sender_id)
+            if client_id:
+                try:
+                    await bot.send_message(chat_id=client_id, text="Диалог закончен.")
+                except Exception as e:
+                    logger.warning(f"Не удалось отправить уведомление клиенту {client_id}: {e}")
+                await message.answer("Диалог закончен.", reply_markup=ReplyKeyboardRemove())
+                logger.info(f"Диалог между оператором {sender_id} и клиентом {client_id} успешно завершён.")
+            else:
+                await message.answer("У вас нет активного диалога.", reply_markup=ReplyKeyboardRemove())
+            return
+
+        # 2. Если у оператора активен диалог с клиентом — пересылаем сообщение клиенту
+        active_client_id = db.get_active_dialog_for_operator(sender_id)
+        if active_client_id:
+            text_content = message.text or message.caption or ""
+            # Внутренние заметки оператора, начинающиеся с #, клиенту не отправляем
+            if text_content.strip().startswith("#"):
+                logger.info(f"Внутренняя заметка оператора #{text_content[:30]} (клиенту не отправляется).")
+                return
+
+            try:
+                await bot.copy_message(
+                    chat_id=active_client_id,
+                    from_chat_id=message.chat.id,
+                    message_id=message.message_id
+                )
+            except TelegramForbiddenError:
+                await message.answer("⚠️ Сообщение не доставлено: пользователь заблокировал бота.")
+            except Exception as e:
+                err_str = str(e).lower()
+                if "blocked" in err_str or "deactivated" in err_str or "can't initiate" in err_str:
+                    await message.answer("⚠️ Сообщение не доставлено: пользователь заблокировал бота.")
+                else:
+                    logger.error(f"Ошибка отправки клиенту {active_client_id}: {e}")
+                    await message.answer(f"❌ Ошибка отправки клиенту: {e}")
+            return
+        else:
+            # У оператора нет активного диалога
+            await message.answer(
+                "У вас сейчас нет активного диалога.\n\n"
+                "Нажмите кнопку «💬 Начать диалог» под карточкой клиента, чтобы начать общение.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+
+    # -------------------------------------------------------------
+    # ВЕТКА КЛИЕНТА (Обычный пользователь)
+    # -------------------------------------------------------------
+    client_id = sender_id
+
+    # Если анкета ещё не завершена
+    if not db.is_survey_completed(client_id):
         await message.answer(
             "Чтобы начать, пожалуйста, нажмите /start для прохождения разбора кожи."
         )
         return
 
-    op_chat_id = get_operator_chat_id()
-    if not op_chat_id:
-        logger.warning(f"OPERATOR_CHAT_ID не настроен. Сообщение от {user_id} не может быть отправлено в топик.")
-        return
-
-    user = db.get_user(user_id)
-    thread_id = user.get("thread_id") if user else None
-
-    if not thread_id:
-        user_name = (user.get("user_name") if user else None) or (message.from_user.first_name or "Клиент")
-        thread_id = await ensure_operator_topic(user_id, user_name, message.from_user.username)
-
-    if thread_id:
+    # Проверяем, есть ли активный диалог с оператором
+    active_operator_id = db.get_active_dialog_for_client(client_id)
+    if active_operator_id:
+        # Диалог активен: дублируем сообщение оператору
         try:
             await bot.copy_message(
-                chat_id=op_chat_id,
+                chat_id=active_operator_id,
                 from_chat_id=message.chat.id,
-                message_id=message.message_id,
-                message_thread_id=thread_id
+                message_id=message.message_id
             )
         except Exception as e:
-            logger.warning(f"copy_message от клиента {user_id} завершился с ошибкой ({e}), попытка forward_message...")
+            logger.warning(f"copy_message оператору {active_operator_id} не удался ({e}), пробуем forward_message...")
             try:
                 await bot.forward_message(
+                    chat_id=active_operator_id,
+                    from_chat_id=message.chat.id,
+                    message_id=message.message_id
+                )
+            except Exception as e2:
+                logger.error(f"forward_message оператору {active_operator_id} также не удался: {e2}")
+
+        # Также дублируем в топик супергруппы, если настроена
+        user_info = db.get_user(client_id)
+        op_chat_id = get_operator_chat_id()
+        if op_chat_id and user_info and user_info.get("thread_id"):
+            try:
+                await bot.copy_message(
+                    chat_id=op_chat_id,
+                    from_chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    message_thread_id=user_info["thread_id"]
+                )
+            except Exception:
+                pass
+        return
+
+    # Диалог сейчас НЕ активен, но клиент отправил сообщение после прохождения анкеты
+    await message.answer("Ваше сообщение получено. Скоро я отвечу вам прямо сюда.")
+
+    user_info = db.get_user(client_id)
+    client_name = user_info.get("user_name") if user_info else (message.from_user.first_name or "Клиент")
+    username_display = f"@{message.from_user.username}" if message.from_user.username else f"ID: {client_id}"
+
+    kb_dialog = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Начать диалог", callback_data=f"start_dialog:{client_id}")]
+    ])
+
+    for oid in get_target_operators():
+        try:
+            await bot.send_message(
+                chat_id=oid,
+                text=f"📩 <b>Новое сообщение от клиента {html.escape(client_name)} ({username_display}):</b>",
+                parse_mode="HTML"
+            )
+            await bot.copy_message(
+                chat_id=oid,
+                from_chat_id=message.chat.id,
+                message_id=message.message_id,
+                reply_markup=kb_dialog
+            )
+        except Exception as e:
+            logger.error(f"Не удалось переслать сообщение оператору {oid}: {e}")
+
+    # Если настроена супергруппа с топиками
+    op_chat_id = get_operator_chat_id()
+    if op_chat_id:
+        thread_id = user_info.get("thread_id") if user_info else None
+        if not thread_id:
+            thread_id = await ensure_operator_topic(client_id, client_name, message.from_user.username)
+        if thread_id:
+            try:
+                await bot.copy_message(
                     chat_id=op_chat_id,
                     from_chat_id=message.chat.id,
                     message_id=message.message_id,
                     message_thread_id=thread_id
                 )
-            except Exception as e2:
-                logger.error(f"forward_message от клиента {user_id} также не удался: {e2}")
+            except Exception:
+                pass
 
 
 # ================== СТАРТ ПРИЛОЖЕНИЯ ==================
