@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 import re
 import json
 import logging
@@ -630,7 +631,9 @@ class WebAppServer:
         logger.info(f"🌐 Сервер Telegram Web App запущен на http://0.0.0.0:{self.port}")
 
     async def start_auto_tunnel(self) -> Optional[str]:
-        """Автоматически запускает встроенный cloudflared.exe (если нет своего WEBAPP_URL)."""
+        """Автоматически запускает встроенный cloudflared.exe на Windows (если нет своего WEBAPP_URL)."""
+        if sys.platform != "win32":
+            return None
         exe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
         if not os.path.isfile(exe_path):
             return None
