@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 import json
 import logging
 import asyncio
@@ -628,7 +629,49 @@ class WebAppServer:
         await site.start()
         logger.info(f"🌐 Сервер Telegram Web App запущен на http://0.0.0.0:{self.port}")
 
+    async def start_auto_tunnel(self) -> Optional[str]:
+        """Автоматически запускает встроенный cloudflared.exe (если нет своего WEBAPP_URL)."""
+        exe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloudflared.exe")
+        if not os.path.isfile(exe_path):
+            return None
+
+        try:
+            self.tunnel_proc = await asyncio.create_subprocess_exec(
+                exe_path, "tunnel", "--url", f"http://127.0.0.1:{self.port}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            url = None
+            for _ in range(40):
+                try:
+                    line = await asyncio.wait_for(self.tunnel_proc.stderr.readline(), timeout=0.5)
+                    s = line.decode('utf-8', errors='ignore')
+                    m = re.search(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", s)
+                    if m:
+                        url = m.group(0)
+                        break
+                except asyncio.TimeoutError:
+                    pass
+            if url:
+                logger.info(f"🚀 Cloudflare HTTPS туннель автоматически поднят: {url}")
+                return url
+            else:
+                self.stop_tunnel()
+                return None
+        except Exception as e:
+            logger.warning(f"Не удалось поднять Cloudflare Tunnel: {e}")
+            return None
+
+    def stop_tunnel(self):
+        if hasattr(self, 'tunnel_proc') and self.tunnel_proc:
+            try:
+                self.tunnel_proc.terminate()
+            except Exception:
+                pass
+            self.tunnel_proc = None
+
     async def stop(self):
+        self.stop_tunnel()
         if self.runner:
             await self.runner.cleanup()
             logger.info("🌐 Сервер Telegram Web App остановлен.")

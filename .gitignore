@@ -15,3 +15,8 @@ ENV/
 
 # Logs
 *.log
+
+# Binaries
+cloudflared.exe
+*.exe
+

@@ -1806,9 +1806,25 @@ async def main():
     else:
         logger.warning("⚠️ Внимание: OPERATOR_CHAT_ID не настроен! Установите его в .env или командой /set_group в группе.")
 
+    global WEBAPP_URL
     # Запуск встроенного веб-сервера для Telegram Mini App (Web App)
     webapp_server = WebAppServer(bot=bot, port=WEBAPP_PORT)
     await webapp_server.start()
+
+    # Если WEBAPP_URL не задан в .env, автоматически поднимаем Cloudflare HTTPS туннель
+    if not WEBAPP_URL:
+        tunnel_url = await webapp_server.start_auto_tunnel()
+        if tunnel_url:
+            WEBAPP_URL = tunnel_url
+            print("\n=======================================================")
+            print("🚀 Telegram Mini App успешно запущен!")
+            print(f"👉 Адрес: {WEBAPP_URL}")
+            print("📱 В Telegram активирована кнопка «Открыть окно чата»!")
+            print("=======================================================\n")
+        else:
+            logger.info("ℹ️ Для работы всплывающего окна Web App задайте WEBAPP_URL в .env")
+    else:
+        logger.info(f"🌐 Используется настроенный WEBAPP_URL: {WEBAPP_URL}")
 
     try:
         await dp.start_polling(bot)
