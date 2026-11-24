@@ -361,6 +361,7 @@ def format_client_card(
 def format_survey_pm_url(
     operator_username: str,
     user_id: int,
+    user_name: str,
     care: str,
     q1: str,
     q2: str,
@@ -368,19 +369,21 @@ def format_survey_pm_url(
     q4: str,
     q5: str,
     q6: str,
-    max_url_len: int = 2000
+    max_url_len: int = 2500
 ) -> str:
     """
     Формирует ссылку https://t.me/<operator>?text=... с предзаполненным текстом ответов клиента.
-    Гарантирует, что итоговый URL не превысит max_url_len (по умолчанию 2000 символов),
+    Гарантирует, что итоговый URL не превысит max_url_len (по умолчанию 2500 символов),
     применяя безопасное сокращение полей или фолбэк с ID анкеты.
     """
     clean_op = (operator_username or "miroslavskayaboks").strip().lstrip("@")
     base_url = f"https://t.me/{clean_op}?text="
+    clean_name = (user_name or "Клиент").strip()
 
     # Вариант 1: Полный текст анкеты
     full_text = (
         f"РАЗБОР\n\n"
+        f"Имя: {clean_name}\n\n"
         f"Текущий уход:\n"
         f"• {care}\n\n"
         f"Ответы по анкете:\n"
@@ -403,8 +406,9 @@ def format_survey_pm_url(
             return s
         return s[:max_len - 3].rstrip(",; ") + "..."
 
+    s_name = truncate_field(clean_name, 25)
     s_care = truncate_field(care, 35)
-    s_q1 = truncate_field(q1, 40)
+    s_q1 = truncate_field(q1, 35)
     s_q2 = truncate_field(q2, 25)
     s_q3 = truncate_field(q3, 20)
     s_q4 = truncate_field(q4, 25)
@@ -413,6 +417,7 @@ def format_survey_pm_url(
 
     short_text = (
         f"РАЗБОР\n\n"
+        f"Имя: {s_name}\n\n"
         f"Текущий уход:\n"
         f"• {s_care}\n\n"
         f"Ответы по анкете:\n"
@@ -430,6 +435,7 @@ def format_survey_pm_url(
     # Вариант 3: Компактный фолбэк с ID анкеты (гарантированно умещается)
     fallback_text = (
         f"РАЗБОР (Анкета #{user_id})\n\n"
+        f"Имя: {s_name}\n\n"
         f"Текущий уход:\n"
         f"• {truncate_field(care, 40)}\n\n"
         f"Ответы по анкете:\n"
@@ -1069,6 +1075,7 @@ async def finish_survey(message: types.Message, state: FSMContext):
     direct_pm_url = format_survey_pm_url(
         operator_username=OPERATOR_PERSONAL_USERNAME,
         user_id=user_id,
+        user_name=user_name,
         care=care_answer,
         q1=q1_text,
         q2=q2_text,
