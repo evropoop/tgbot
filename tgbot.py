@@ -15,6 +15,7 @@ import re
 import html
 import asyncio
 import logging
+import urllib.parse
 from typing import Optional, List, Dict, Any, Set
 
 from aiogram import Bot, Dispatcher, F, types
@@ -67,6 +68,9 @@ else:
     OWNER_IDS = [1745568601, 7875791813]
 
 IMAGE_URL = "https://pbt.storage.yandexcloud.net/cp_upload/3226d6315635f4e60bebd98a6421ea7a_full.jpeg"
+
+# Username специалиста / оператора для личной переписки
+OPERATOR_PERSONAL_USERNAME = os.getenv("OPERATOR_PERSONAL_USERNAME", "miroslavskayaboks").strip().lstrip("@")
 
 
 # Хранилище игнорируемых media_group_id для заметок оператора (#...)
@@ -352,6 +356,87 @@ def format_client_card(
         f"{html.escape(analysis_text)}"
     )
     return card
+
+
+def format_survey_pm_url(
+    operator_username: str,
+    user_id: int,
+    care: str,
+    q1: str,
+    q2: str,
+    q3: str,
+    q4: str,
+    q5: str,
+    q6: str,
+    max_url_len: int = 2000
+) -> str:
+    """
+    Формирует ссылку https://t.me/<operator>?text=... с предзаполненным текстом ответов клиента.
+    Гарантирует, что итоговый URL не превысит max_url_len (по умолчанию 2000 символов),
+    применяя безопасное сокращение полей или фолбэк с ID анкеты.
+    """
+    clean_op = (operator_username or "miroslavskayaboks").strip().lstrip("@")
+    base_url = f"https://t.me/{clean_op}?text="
+
+    # Вариант 1: Полный текст анкеты
+    full_text = (
+        f"РАЗБОР\n\n"
+        f"Текущий уход:\n"
+        f"• {care}\n\n"
+        f"Ответы по анкете:\n"
+        f"1. Беспокоит: {q1}\n"
+        f"2. Через 10 мин после умывания водой: {q2}\n"
+        f"3. К середине дня: {q3}\n"
+        f"4. Чувствительность: {q4}\n"
+        f"5. Особенности / статус: {q5}\n"
+        f"6. Аллергия: {q6}"
+    )
+
+    encoded_full = urllib.parse.quote(full_text)
+    if len(base_url + encoded_full) <= max_url_len:
+        return base_url + encoded_full
+
+    # Вариант 2: Безопасное сокращение самых длинных полей (все вопросы 1-7 сохраняются)
+    def truncate_field(val: Any, max_len: int) -> str:
+        s = str(val or "—").strip()
+        if len(s) <= max_len:
+            return s
+        return s[:max_len - 3].rstrip(",; ") + "..."
+
+    s_care = truncate_field(care, 35)
+    s_q1 = truncate_field(q1, 40)
+    s_q2 = truncate_field(q2, 25)
+    s_q3 = truncate_field(q3, 20)
+    s_q4 = truncate_field(q4, 25)
+    s_q5 = truncate_field(q5, 25)
+    s_q6 = truncate_field(q6, 25)
+
+    short_text = (
+        f"РАЗБОР\n\n"
+        f"Текущий уход:\n"
+        f"• {s_care}\n\n"
+        f"Ответы по анкете:\n"
+        f"1. Беспокоит: {s_q1}\n"
+        f"2. Через 10 мин после умывания водой: {s_q2}\n"
+        f"3. К середине дня: {s_q3}\n"
+        f"4. Чувствительность: {s_q4}\n"
+        f"5. Особенности / статус: {s_q5}\n"
+        f"6. Аллергия: {s_q6}"
+    )
+    encoded_short = urllib.parse.quote(short_text)
+    if len(base_url + encoded_short) <= max_url_len:
+        return base_url + encoded_short
+
+    # Вариант 3: Компактный фолбэк с ID анкеты (гарантированно умещается)
+    fallback_text = (
+        f"РАЗБОР (Анкета #{user_id})\n\n"
+        f"Текущий уход:\n"
+        f"• {truncate_field(care, 40)}\n\n"
+        f"Ответы по анкете:\n"
+        f"1. Беспокоит: {truncate_field(q1, 50)}\n"
+        f"2-6. Ответы сохранены в анкете #{user_id}"
+    )
+    return base_url + urllib.parse.quote(fallback_text)
 
 
 async def ensure_operator_topic(
@@ -957,19 +1042,7 @@ async def finish_survey(message: types.Message, state: FSMContext):
 
     logger.info(f"✅ Анкета завершена пользователем {user_id} ({user_name})")
 
-    # 3. Клиенту в бот:
-    # Сообщение 1: сгенерированный текст разбора
-    await message.answer(analysis_text)
-
-    await asyncio.sleep(0.5)
-
-    # Сообщение 2: финальное сообщение
-    final_msg = "Я уже получила вашу анкету и результаты теста. Скоро посмотрю их и напишу вам прямо сюда в чат."
-    await message.answer(final_msg, reply_markup=ReplyKeyboardRemove())
-
-    await state.clear()
-
-    # 4. Отправка в топик супергруппы оператора
+    # 3. Отправка карточки клиента в админ-чат / топик (сохраняется без изменений)
     await send_client_card_to_topic(
         user_id=user_id,
         user_name=user_name,
@@ -980,6 +1053,42 @@ async def finish_survey(message: types.Message, state: FSMContext):
         allergy_note=allergy_note,
         analysis_text=analysis_text
     )
+
+    # 4. Формирование предзаполненной ссылки для личного чата с @miroslavskayaboks
+    q1_text = answers.get("q1", "—")
+    q2_text = answers.get("q2", "—")
+    q3_text = answers.get("q3", "—")
+    q4_text = answers.get("q4", "—")
+    q5_text = answers.get("q5", "—")
+    if medical_note:
+        q5_text = f"{q5_text} (уточнено: {medical_note})"
+    q6_text = answers.get("q6", "—")
+    if allergy_note and "Да:" not in str(q6_text):
+        q6_text = f"Да: {allergy_note}"
+
+    direct_pm_url = format_survey_pm_url(
+        operator_username=OPERATOR_PERSONAL_USERNAME,
+        user_id=user_id,
+        care=care_answer,
+        q1=q1_text,
+        q2=q2_text,
+        q3=q3_text,
+        q4=q4_text,
+        q5=q5_text,
+        q6=q6_text
+    )
+
+    # 5. Сообщение пользователю в боте с URL-кнопкой (СРОЧНО по ТЗ)
+    bot_finish_text = (
+        "Готово! Остался один шаг, чтобы я получила твою анкету 🤍\n\n"
+        "Жми кнопку ниже — откроется наш чат, а слово «РАЗБОР» и твои ответы уже будут вставлены в сообщение. Просто нажми «Отправить» 👇"
+    )
+    kb_pm = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📩 Отправить «РАЗБОР»", url=direct_pm_url)]
+    ])
+
+    await message.answer(bot_finish_text, reply_markup=kb_pm)
+    await state.clear()
 
 
 # ================== РЕЖИМ ЖИВОГО ДИАЛОГА: ТОПИКИ ==================
